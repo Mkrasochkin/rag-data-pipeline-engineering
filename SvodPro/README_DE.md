@@ -1,3 +1,4 @@
+```text
 svodpro/
 ├── .env                              # Секреты (пароли, ключи)
 ├── .gitignore                        # Игнорируем .env и данные
@@ -44,3 +45,4 @@ svodpro/
 ├── qdrant_data/                      # Данные Qdrant (авто)
 │
 └── README_DE.md                      # Инструкция
+```
