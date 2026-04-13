@@ -1,30 +1,35 @@
 import re
+import uuid
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from embedder import Embedder
 
+
 DEFAULT_CHUNK_SIZE = 1000
 DEFAULT_CHUNK_OVERLAP = 200
-MIN_BLOCK_CHARS = 200
-MAX_BLOCK_CHARS = 1000
+MIN_BLOCK_TOKENS = 200
+MAX_BLOCK_TOKENS = 1000
 SEPARATORS = ["\n\n", "\n", ". ", " "]
 
-#Регулярка находит строки, которые выглядят как пункты/разделы документа, и разбивает их на номер + заголовок
+# Два случая:
+# 1) Номер с точками (подпункты): 3.24, 4.9, 1.1, 5.3.6 — иногда после номера ещё точка: «5.3.6. В…».
+# 2) Только цифры без точки (разделы): 4 Общие, 12 Сведения — только ЗАГЛАВНАЯ после номера,
+#    иначе ловятся обрывы вроде «7 следующих…», «8 такие…» с середины абзаца.
 _CLAUSE = re.compile(
     r"(?:^\s*(?P<sub>\d{1,3}(?:\.\d{1,3})+)\.?\s+(?P<sub_title>[А-ЯЁа-яA-Za-z«].+)$)"
     r"|(?:^\s*(?P<sec>\d{1,2})\s+(?P<sec_title>[А-ЯЁA-Z«].+)$)",
     re.MULTILINE,
 )
 
-# Достаёт номер пункта/раздела из начала строки (например 5.3.6 или 12)
+# Только первая строка блока: «5.3.6 …» или «12 Сведения…» — для поля clause_ref в metadata
 _FIRST_LINE_NUM = re.compile(
     r"^\s*((?:\d{1,3}(?:\.\d{1,3})+)|(?:\d{1,2}))\s*\.?\s+",
 )
 
-# Первая строка в начале файла, начинающаяся с СП
+# Первая строка в начале файла для СП с выделением кода документа.
 _FIRST_LINE_SP = re.compile(
-    r"^\s*(?:#+\s*)?(?P<title>СП.+)$",
+    r"^\s*(?:#+\s*)?(?P<title>СП\s*(?P<designation>\d+(?:\.\d+)*).*)$",
     re.MULTILINE,
 )
 
@@ -35,15 +40,17 @@ class SPDocumentChunker:
         *,
         chunk_size: int = DEFAULT_CHUNK_SIZE,
         chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
-        min_block_chars: int = MIN_BLOCK_CHARS,
-        max_block_chars: int = MAX_BLOCK_CHARS,
+        min_block_tokens: int = MIN_BLOCK_TOKENS,
+        max_block_tokens: int = MAX_BLOCK_TOKENS,
+        embedder: Embedder,
         separators: list[str] | None = None
     ) -> None:
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
-        self.min_block_chars = min_block_chars
-        self.max_block_chars = max_block_chars
+        self.min_block_tokens = min_block_tokens
+        self.max_block_tokens = max_block_tokens
         self.separators = list(separators) if separators is not None else list(SEPARATORS)
+        self.embedder = embedder
 
     def split_text_into_chunks(self, text: str) -> list[str]:
         """
@@ -84,16 +91,6 @@ class SPDocumentChunker:
             first_parts[:-1] == second_parts[:-1]
         )
 
-    def read_text_from_file(self, file_path: str) -> str:
-        """
-        Читает текст из пути файла file_path и возвращает его в виде строки.
-
-        Args:
-            file_path: путь к файлу
-        """
-        with open(file_path, encoding="utf-8") as file:
-            return file.read()
-
     def split_plain_sp_into_blocks(self, text: str) -> list[str]:
         """
         Разбивает текст на чанки по пунктам и возвращает список чанков.
@@ -127,9 +124,9 @@ class SPDocumentChunker:
 
     def merge_minimal_blocks(self, blocks: list[str]) -> list[str]:
         """
-        Склеивает блоки, если их длина меньше MIN_BLOCK_CHARS символов и они находятся на одном уровне нумерации.
+        Склеивает блоки, если их длина меньше MIN_BLOCK_TOKENS токенов и они находятся на одном уровне нумерации.
         Если блок меньше минимума, пытается склеить его с последующими блоками того же уровня,
-        пока не наберётся максимум символов.
+        пока не наберётся максимум токенов.
 
         Args:
             blocks: список чанков для склеивания
@@ -141,12 +138,12 @@ class SPDocumentChunker:
         i = 0
 
         while i < len(blocks):
-            # Текущий блок и его размер
+            # Текущий блок и его размер в токенах
             current_block = blocks[i]
-            current_block_size = len(current_block)
+            current_block_tokens = self.embedder.count_tokens(current_block)
 
             # Если блок меньше минимума, пытаемся склеить его с последующими блоками того же уровня
-            if current_block_size < self.min_block_chars:
+            if current_block_tokens < self.min_block_tokens:
                 # Извлекаем номер пункта из первой строки блока в виде текста
                 current_block_first_line = current_block.strip().split("\n", 1)[0]
                 current_match = _FIRST_LINE_NUM.match(current_block_first_line)
@@ -157,9 +154,9 @@ class SPDocumentChunker:
                 j = i + 1
 
                 while j < len(blocks):
-                    # Следующий блок и его размер
+                    # Следующий блок и его размер в токенах
                     next_block = blocks[j]
-                    next_block_size = len(next_block)
+                    next_block_tokens = self.embedder.count_tokens(next_block)
 
                     # Извлекаем номер пункта из первой строки следующего блока в виде текста
                     next_block_first_line = next_block.strip().split("\n", 1)[0]
@@ -169,13 +166,13 @@ class SPDocumentChunker:
                     # Проверяем, находятся ли два пункта на одном уровне и имеют ли одного родителя
                     check_level = self.is_same_level_and_parent(current_number_text, next_number_text)
 
-                    # Если пункты не на одном уровне или сумма размеров блоков превышает максимум, прекращаем склеивание
-                    if not check_level or len(current_block) + 2 + next_block_size > self.max_block_chars:
+                    # Если пункты не на одном уровне или сумма токенов превышает максимум, прекращаем склеивание
+                    if not check_level or current_block_tokens + next_block_tokens > self.max_block_tokens:
                         break
 
                     # Склеиваем текущий блок с следующим и переходим к следующему блоку
                     current_block += "\n\n" + next_block
-                    current_block_size = len(current_block)
+                    current_block_tokens += next_block_tokens
                     j += 1
 
                 # Добавляем склеенный блок в список и переходим к следующему блоку
@@ -210,7 +207,7 @@ class SPDocumentChunker:
     def clause_display(self, nums: list[str]) -> str | None:
         """
         Человеко-читаемая подпись пунктов для UI (поле clause_display в БД).
-        Один пункт: «п. 5.26.1»; несколько: «пп. 5.26.1-5.26.3». Без пунктов - NULL.
+        Один пункт: «п. 5.26.1»; несколько: «пп. 5.26.1-5.26.3».
 
         Args:
             nums: список номеров пунктов
@@ -223,10 +220,8 @@ class SPDocumentChunker:
 
     def add_metadata(
         self,
-        blocks: list[str],
-        doc_id: str = "",
         *,
-        embedder: Embedder,
+        blocks: list[str],
         document_text: str | None = None,
     ) -> list[dict]:
         """
@@ -237,23 +232,26 @@ class SPDocumentChunker:
 
         Args:
             blocks: список чанков для добавления метаданных
-            doc_id: идентификатор документа (например, СП 48.13330.2019)
             embedder: экземпляр Embedder для подсчёта токенов
         """
-        # Определяем идентификатор документа
-        resolved_doc_id = doc_id or ""
+        designation = None
+        resolved_year = None
+
         if document_text:
             head = "\n".join(document_text.splitlines()[:200])
             m = _FIRST_LINE_SP.search(head)
+
             if m:
-                title = m.group("title").strip()
-                code_m = re.match(
-                    r"СП\s*(\d+(?:\.\d+)*)",
-                    title,
-                )
-                resolved_doc_id = (
-                    f"СП {code_m.group(1)}" if code_m else title
-                )
+                # Вытаскиваем код документа и название документа
+                designation = m.group("designation").strip()
+                # Вытаскиваем название документа
+                # title = m.group("title").strip()
+                # Вытаскиваем год документа
+                year_match = re.search(r"(\d{4})$", designation)
+                if year_match is None:
+                    raise ValueError("Не удалось вытащить год документа")
+                resolved_year = int(year_match.group(1))
+
         result: list[dict] = []
 
         # Оборачиваем чанки в словари с метаданными
@@ -279,8 +277,12 @@ class SPDocumentChunker:
                 {
                     "text": text,
                     "metadata": {
-                        "doc_id": resolved_doc_id,
+                        "qdrant_point_id": str(uuid.uuid4()),
+                        "designation": designation,
+                        "year": resolved_year,
+                        "type": "СП",
                         "chunk_index": chunk_index,
+                        "section_id": None,
                         "first_item_number": first_item_number,
                         "clause_start": clause_start,
                         "clause_end": clause_end,
@@ -289,8 +291,10 @@ class SPDocumentChunker:
                         "clause_display": clause_display_str,
                         "merged_clauses_count": len(nums),
                         "content_type": "text",
+                        "parent_chunk_id": None,
                         "content_url": None,
-                        "token_count": embedder.count_tokens(text),
+                        "text_content": text,
+                        "token_count": self.embedder.count_tokens(text),
                     },
                 }
             )
