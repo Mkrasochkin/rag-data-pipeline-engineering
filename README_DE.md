@@ -1,5 +1,5 @@
 ```text
-svodpro/
+Team_DE/
 ├── .env                              # Секреты (пароли, ключи)
 ├── .gitignore                        # Игнорируем .env и данные
 ├── docker-compose.yml                # Запуск Qdrant
