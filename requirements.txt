@@ -1,7 +1,9 @@
 qdrant-client==1.9.0
-psycopg2-binary==2.9.10
+#psycopg2-binary==2.9.10
+psycopg2==2.9.11
 python-dotenv==1.0.0
-sentence-transformers==2.2.2
+sentence-transformers==5.3.0
 pypdf==3.17.0
 tqdm==4.66.1
-supabase python-dotenv
+supabase==2.15.3
+langchain_text_splitters==1.1.1

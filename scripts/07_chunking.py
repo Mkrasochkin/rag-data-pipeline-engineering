@@ -1,9 +1,11 @@
 import re
 import uuid
+import importlib
+import json
 
+from pathlib import Path
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-
-from embedder import Embedder
+Embedder = importlib.import_module("scripts.08_embedding").Embedder
 
 
 DEFAULT_CHUNK_SIZE = 1000
@@ -11,6 +13,8 @@ DEFAULT_CHUNK_OVERLAP = 200
 MIN_BLOCK_TOKENS = 200
 MAX_BLOCK_TOKENS = 1000
 SEPARATORS = ["\n\n", "\n", ". ", " "]
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+JSON_DIR = PROJECT_ROOT / "output" / "json"
 
 # Два случая:
 # 1) Номер с точками (подпункты): 3.24, 4.9, 1.1, 5.3.6 — иногда после номера ещё точка: «5.3.6. В…».
@@ -27,11 +31,11 @@ _FIRST_LINE_NUM = re.compile(
     r"^\s*((?:\d{1,3}(?:\.\d{1,3})+)|(?:\d{1,2}))\s*\.?\s+",
 )
 
-# Первая строка в начале файла для СП с выделением кода документа.
-_FIRST_LINE_SP = re.compile(
-    r"^\s*(?:#+\s*)?(?P<title>СП\s*(?P<designation>\d+(?:\.\d+)*).*)$",
-    re.MULTILINE,
-)
+# # Первая строка в начале файла для СП с выделением кода документа.
+# _FIRST_LINE_SP = re.compile(
+#     r"^\s*(?:#+\s*)?(?P<title>СП\s*(?P<designation>\d+(?:\.\d+)*).*)$",
+#     re.MULTILINE,
+# )
 
 
 class SPDocumentChunker:
@@ -218,11 +222,29 @@ class SPDocumentChunker:
             return f"п. {nums[0]}"
         return f"пп. {nums[0]}-{nums[-1]}"
 
+    def get_data_from_json(self, json_path: Path) -> dict | None:
+        """
+        Читаем JSON-файл и возвращаем часть метаданных.
+
+        Args:
+            json_path: путь к JSON-файлу
+        """
+        with open(json_path, "r", encoding="utf-8") as f:
+            json_data = json.load(f)
+
+        if json_data:
+            return {
+                "designation": json_data["document"]["metadata"]["designation"],
+                "year": json_data["document"]["metadata"]["year"],
+            }
+        return None
+
     def add_metadata(
         self,
         *,
         blocks: list[str],
         document_text: str | None = None,
+        json_path: Path = JSON_DIR / "СП_48_13330_2019.json",
     ) -> list[dict]:
         """
         Оборачивает разбитые на чанки тексты в словари с метаданными.
@@ -234,23 +256,25 @@ class SPDocumentChunker:
             blocks: список чанков для добавления метаданных
             embedder: экземпляр Embedder для подсчёта токенов
         """
-        designation = None
-        resolved_year = None
 
-        if document_text:
-            head = "\n".join(document_text.splitlines()[:200])
-            m = _FIRST_LINE_SP.search(head)
+        # Код закрыт пока фиксики его не починят
+        # designation = None
+        # resolved_year = None
 
-            if m:
-                # Вытаскиваем код документа и название документа
-                designation = m.group("designation").strip()
-                # Вытаскиваем название документа
-                # title = m.group("title").strip()
-                # Вытаскиваем год документа
-                year_match = re.search(r"(\d{4})$", designation)
-                if year_match is None:
-                    raise ValueError("Не удалось вытащить год документа")
-                resolved_year = int(year_match.group(1))
+        # if document_text:
+        #     head = "\n".join(document_text.splitlines()[:200])
+        #     m = _FIRST_LINE_SP.search(head)
+
+        #     if m:
+        #         # Вытаскиваем код документа и название документа
+        #         designation = m.group("designation").strip()
+        #         # Вытаскиваем название документа
+        #         # title = m.group("title").strip()
+        #         # Вытаскиваем год документа
+        #         year_match = re.search(r"(\d{4})$", designation)
+        #         if year_match is None:
+        #             raise ValueError("Не удалось вытащить год документа")
+        #         resolved_year = int(year_match.group(1))
 
         result: list[dict] = []
 
@@ -273,13 +297,18 @@ class SPDocumentChunker:
             )
             clause_display_str = self.clause_display(nums)
 
+            # Получаем год и код из JSON-файла
+            data_json = self.get_data_from_json(json_path)
+            designation = data_json["designation"]
+            year = data_json["year"]
+
             result.append(
                 {
                     "text": text,
                     "metadata": {
                         "qdrant_point_id": str(uuid.uuid4()),
                         "designation": designation,
-                        "year": resolved_year,
+                        "year": year,
                         "type": "СП",
                         "chunk_index": chunk_index,
                         "section_id": None,
