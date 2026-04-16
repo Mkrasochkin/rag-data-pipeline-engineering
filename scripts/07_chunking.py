@@ -236,6 +236,7 @@ class SPDocumentChunker:
             return {
                 "designation": json_data["document"]["metadata"]["designation"],
                 "year": json_data["document"]["metadata"]["year"],
+                "type": json_data["document"]["metadata"]["type"],
             }
         return None
 
@@ -301,6 +302,7 @@ class SPDocumentChunker:
             data_json = self.get_data_from_json(json_path)
             designation = data_json["designation"]
             year = data_json["year"]
+            type = data_json["type"]
 
             result.append(
                 {
@@ -309,7 +311,7 @@ class SPDocumentChunker:
                         "qdrant_point_id": str(uuid.uuid4()),
                         "designation": designation,
                         "year": year,
-                        "type": "СП",
+                        "type": type,
                         "chunk_index": chunk_index,
                         "section_id": None,
                         "first_item_number": first_item_number,
