@@ -30,8 +30,8 @@ def write_chunks_preview(
     selected_chunks = chunks[:limit]
     with output_path.open("w", encoding="utf-8") as f:
         for i, chunk in enumerate(selected_chunks):
-            text = chunk.get("text", "") or ""
             metadata = dict(chunk.get("metadata", {}))
+            text = metadata.get("text_content", "") or ""
             metadata.pop("text", None)
             metadata.pop("text_content", None)
 
@@ -69,10 +69,11 @@ def main() -> None:
         # supabase: Client = SupabaseHelper(supabase_url=SUPABASE_URL, supabase_key=SUPABASE_KEY).get_supabase_client()
         # supabase.table("chunks").delete().execute()
 
-        # # Подключаемся к Supabase и заливаем чанки в таблицу chunks
-        # supabase: Client = SupabaseHelper(supabase_url=SUPABASE_URL, supabase_key=SUPABASE_KEY).get_supabase_client()
-        # chunks_upsert = SupabaseChunksUpserter(supabase_client=supabase)
-        # chunks_upsert.insert_chunks(chunks=with_meta)
+        # Подключаемся к Supabase и заливаем чанки в таблицу chunks
+        supabase: Client = SupabaseHelper(supabase_url=SUPABASE_URL, supabase_key=SUPABASE_KEY).get_supabase_client()
+        chunks_upsert = SupabaseChunksUpserter(supabase_client=supabase)
+        vector_rows = chunks_upsert.insert_chunks(chunks=with_meta)
+        print(vector_rows)
 
     except Exception as error:
         print("Ошибка во время подготовки/вставки чанков:", error)

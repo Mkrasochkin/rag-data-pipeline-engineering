@@ -81,10 +81,10 @@ class SupabaseChunksUpserter:
         *,
         chunks: list[dict],
         batch_size: int = 100,
-    ) -> list[str]:
+    ) -> list[dict]:
         """
         Вставляет список чанков в таблицу chunks батчами и возвращает
-        список id вставленных записей.
+        данные, необходимые для загрузки в векторное хранилище.
 
         Args:
             chunks: список словарей с данными чанков
@@ -134,19 +134,33 @@ class SupabaseChunksUpserter:
                     "content_type": metadata.get("content_type", "text"),
                     "parent_chunk_id": metadata.get("parent_chunk_id"),
                     "content_url": metadata.get("content_url"),
-                    "text_content": metadata.get("text_content", chunk.get("text", "")),
+                    "text_content": metadata["text_content"],
                     "token_count": metadata.get("token_count"),
                 }
             )
 
-        inserted_ids: list[str] = []
+        vector_rows: list[dict] = []
         for start in range(0, len(records), batch_size):
             batch = records[start : start + batch_size]
             response = self.supabase_client.table("chunks").upsert(batch).execute()
             rows = response.data or []
-            inserted_ids.extend(row["id"] for row in rows if row.get("id"))
+            vector_rows.extend(
+                {
+                    "text": row.get("text_content"),
+                    "point_id": row.get("id"),
+                    "payload": {
+                        "workspace_id": row.get("workspace_id"),
+                        "doc_id": row.get("doc_id"),
+                        "clause_number": row.get("clause_start"),
+                        "content_type": row.get("content_type"),
+                        "chunk_id": row.get("id"),
+                    },
+                }
+                for row in rows
+                if row.get("id")
+            )
 
-        if not inserted_ids:
+        if not vector_rows:
             raise ValueError("Не удалось вставить чанки в таблицу chunks.")
 
-        return inserted_ids
+        return vector_rows

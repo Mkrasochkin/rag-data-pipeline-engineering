@@ -292,7 +292,6 @@ class SPDocumentChunker:
             for piece in pieces:
                 result.append(
                     {
-                        "text": piece,
                         "metadata": {
                             "qdrant_point_id": str(uuid.uuid4()),
                             "designation": designation,
