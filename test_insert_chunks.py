@@ -4,6 +4,7 @@ import os
 import pathlib
 
 from dotenv import load_dotenv
+from scripts import qdrant_helper
 from scripts.supbase_helper import SupabaseHelper
 from scripts.qdrant_helper import QdrantHelper
 from supabase import Client
@@ -16,6 +17,7 @@ QdrantInsertor = importlib.import_module("scripts.11_insert_to_qdrant").QdrantIn
 embed_vector_rows_to_qdrant_points = importlib.import_module("scripts.11_insert_to_qdrant").embed_vector_rows_to_qdrant_points
 
 PROJECT_ROOT = pathlib.Path(__file__).parent
+load_dotenv(PROJECT_ROOT / ".env", override=True)
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_PUBLIC_KEY_LONG")
@@ -55,9 +57,6 @@ def write_chunks_preview(
 
 
 def main() -> None:
-    load_dotenv(override=True)
-    print("Проверка подключения к Supabase через client API")
-
     try:
         embedder = Embedder()
         # Получаем чанки из чистого файла
@@ -75,18 +74,28 @@ def main() -> None:
         write_chunks_preview(chunks=with_meta, output_path=preview_path, limit=100)
 
         # Подключаемся к Supabase и заливаем чанки в таблицу chunks
-        supabase: Client = SupabaseHelper(supabase_url=SUPABASE_URL, supabase_key=SUPABASE_KEY).get_supabase_client()
-        chunks_upsert = SupabaseChunksUpserter(supabase_client=supabase)
-        sub_rows = chunks_upsert.insert_chunks(chunks=with_meta)
+        supabase_helper = SupabaseHelper(supabase_url=SUPABASE_URL, supabase_key=SUPABASE_KEY)
+        # Проверяем соединение с Supabase
+        if not supabase_helper.check_connection():
+            print("Не удалось подключиться к Supabase")
+            return
+        supabase_client = supabase_helper.get_supabase_client()
 
+        # Вставляем чанки в таблицу chunks
+        chunks_upsert = SupabaseChunksUpserter(supabase_client=supabase_client)
+        sub_rows = chunks_upsert.insert_chunks(chunks=with_meta)
         qdrant_points = embed_vector_rows_to_qdrant_points(embedder, sub_rows)
         print(f"Готово точек для Qdrant: {len(qdrant_points)}")
 
-        qdrant_client = QdrantHelper(
-            qdrant_host=QDRANT_HOST,
-            qdrant_port=QDRANT_PORT,
-            qdrant_api_key=QDRANT_API_KEY,
-        ).get_qdrant_client()
+        # Подключаемся к Qdrant
+        qdrant_helper = QdrantHelper(qdrant_host=QDRANT_HOST, qdrant_port=QDRANT_PORT, qdrant_api_key=QDRANT_API_KEY)
+        if not qdrant_helper.check_connection():
+            print("Не удалось подключиться к Qdrant")
+            return
+
+        qdrant_client = qdrant_helper.get_qdrant_client()
+
+        # Вставляем чанки в Qdrant
         qdrant_insertor = QdrantInsertor(qdrant_client=qdrant_client)
         qdrant_insertor.create_collection(
             collection_name="test_chunks",

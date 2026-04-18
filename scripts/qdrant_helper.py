@@ -9,15 +9,25 @@ class QdrantHelper:
         qdrant_port: str,
         qdrant_api_key: str = "",
     ):
-        self.qdrant_url = f"http://{qdrant_host}:{qdrant_port}"
-        self.qdrant_api_key = qdrant_api_key
+        self.client = QdrantClient(
+            url=f"http://{qdrant_host}:{qdrant_port}",
+            api_key=qdrant_api_key,
+            timeout=10,
+        )
 
     def get_qdrant_client(self) -> QdrantClient:
         """
-        Создает Qdrant client по указанным параметрам.
-        И возвращаем его.
+        Возвращает Qdrant client.
         """
-        return QdrantClient(
-                url=self.qdrant_url,
-                api_key=self.qdrant_api_key,
-            )
+        return self.client
+
+    def check_connection(self) -> bool:
+        """
+        Проверяет соединение с Qdrant.
+        """
+        try:
+            self.get_qdrant_client().get_collections()
+            return True
+        except Exception as e:
+            print(f"Ошибка при проверке соединения с Qdrant: {e}")
+            return False
