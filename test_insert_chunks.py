@@ -5,16 +5,24 @@ import pathlib
 
 from dotenv import load_dotenv
 from scripts.supbase_helper import SupabaseHelper
-from supabase import Client, create_client
+from scripts.qdrant_helper import QdrantHelper
+from supabase import Client
 
 SupabaseChunksUpserter = importlib.import_module("scripts.09_upsert_chunks_supb").SupabaseChunksUpserter
 SPDocumentChunker = importlib.import_module("scripts.07_chunking").SPDocumentChunker
 Embedder = importlib.import_module("scripts.08_embedding").Embedder
 
+QdrantInsertor = importlib.import_module("scripts.11_insert_to_qdrant").QdrantInsertor
+embed_vector_rows_to_qdrant_points = importlib.import_module("scripts.11_insert_to_qdrant").embed_vector_rows_to_qdrant_points
+
 PROJECT_ROOT = pathlib.Path(__file__).parent
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_PUBLIC_KEY_LONG")
+
+QDRANT_HOST = os.getenv("QDRANT_HOST")
+QDRANT_PORT = os.getenv("QDRANT_PORT")
+QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
 
 
 def write_chunks_preview(
@@ -51,8 +59,9 @@ def main() -> None:
     print("Проверка подключения к Supabase через client API")
 
     try:
+        embedder = Embedder()
         # Получаем чанки из чистого файла
-        chunker = SPDocumentChunker(embedder=Embedder())
+        chunker = SPDocumentChunker(embedder=embedder)
         _md = PROJECT_ROOT / "output" / "cleaned"
         path = _md / "СП_48_13330_2019.md"
         raw = path.read_text(encoding="utf-8")
@@ -61,19 +70,31 @@ def main() -> None:
             document_text=raw,
         )
 
+
         preview_path = PROJECT_ROOT / "chunks_preview_100.txt"
         write_chunks_preview(chunks=with_meta, output_path=preview_path, limit=100)
-
-
-        # # Теперь очистим таблицу chunks
-        # supabase: Client = SupabaseHelper(supabase_url=SUPABASE_URL, supabase_key=SUPABASE_KEY).get_supabase_client()
-        # supabase.table("chunks").delete().execute()
 
         # Подключаемся к Supabase и заливаем чанки в таблицу chunks
         supabase: Client = SupabaseHelper(supabase_url=SUPABASE_URL, supabase_key=SUPABASE_KEY).get_supabase_client()
         chunks_upsert = SupabaseChunksUpserter(supabase_client=supabase)
-        vector_rows = chunks_upsert.insert_chunks(chunks=with_meta)
-        print(vector_rows)
+        sub_rows = chunks_upsert.insert_chunks(chunks=with_meta)
+
+        qdrant_points = embed_vector_rows_to_qdrant_points(embedder, sub_rows)
+        print(f"Готово точек для Qdrant: {len(qdrant_points)}")
+
+        qdrant_client = QdrantHelper(
+            qdrant_host=QDRANT_HOST,
+            qdrant_port=QDRANT_PORT,
+            qdrant_api_key=QDRANT_API_KEY,
+        ).get_qdrant_client()
+        qdrant_insertor = QdrantInsertor(qdrant_client=qdrant_client)
+        qdrant_insertor.create_collection(
+            collection_name="test_chunks",
+            vector_size=embedder.get_embedding_dimension(),
+        )
+        qdrant_insertor.insert_chunks(chunks=qdrant_points, collection_name="test_chunks")
+        print("Чанки вставлены в Qdrant")
+
 
     except Exception as error:
         print("Ошибка во время подготовки/вставки чанков:", error)

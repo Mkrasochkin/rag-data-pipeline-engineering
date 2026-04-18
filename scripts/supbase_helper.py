@@ -18,4 +18,8 @@ class SupabaseHelper:
         self.supabase_key = supabase_key
 
     def get_supabase_client(self) -> Client:
+        """
+        Создает Supabase client из переменных окружения.
+        И возвращаем его.
+        """
         return create_client(self.supabase_url, self.supabase_key)
