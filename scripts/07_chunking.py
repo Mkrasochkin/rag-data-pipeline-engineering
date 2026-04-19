@@ -8,10 +8,10 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 Embedder = importlib.import_module("scripts.08_embedding").Embedder
 
 
-DEFAULT_CHUNK_SIZE = 1000
-DEFAULT_CHUNK_OVERLAP = 200
+DEFAULT_CHUNK_SIZE_TOKENS = 412
+DEFAULT_CHUNK_OVERLAP_TOKENS = 100
 MIN_BLOCK_TOKENS = 200
-MAX_BLOCK_TOKENS = 1000
+MAX_BLOCK_TOKENS = 500
 SEPARATORS = ["\n\n", "\n", ". ", " "]
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 JSON_DIR = PROJECT_ROOT / "output" / "json"
@@ -42,8 +42,8 @@ class SPDocumentChunker:
     def __init__(
         self,
         *,
-        chunk_size: int = DEFAULT_CHUNK_SIZE,
-        chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
+        chunk_size: int = DEFAULT_CHUNK_SIZE_TOKENS,
+        chunk_overlap: int = DEFAULT_CHUNK_OVERLAP_TOKENS,
         min_block_tokens: int = MIN_BLOCK_TOKENS,
         max_block_tokens: int = MAX_BLOCK_TOKENS,
         embedder: Embedder,
@@ -68,6 +68,7 @@ class SPDocumentChunker:
             chunk_size=self.chunk_size,
             chunk_overlap=self.chunk_overlap,
             separators=self.separators,
+            length_function=self.embedder.count_tokens,
         )
         return splitter.split_text(text)
 
@@ -257,30 +258,16 @@ class SPDocumentChunker:
             blocks: список чанков для добавления метаданных
             embedder: экземпляр Embedder для подсчёта токенов
         """
-
-        # Код закрыт пока фиксики его не починят
-        # designation = None
-        # resolved_year = None
-
-        # if document_text:
-        #     head = "\n".join(document_text.splitlines()[:200])
-        #     m = _FIRST_LINE_SP.search(head)
-
-        #     if m:
-        #         # Вытаскиваем код документа и название документа
-        #         designation = m.group("designation").strip()
-        #         # Вытаскиваем название документа
-        #         # title = m.group("title").strip()
-        #         # Вытаскиваем год документа
-        #         year_match = re.search(r"(\d{4})$", designation)
-        #         if year_match is None:
-        #             raise ValueError("Не удалось вытащить год документа")
-        #         resolved_year = int(year_match.group(1))
-
         result: list[dict] = []
+        # Получаем год и код из JSON-файла один раз на весь документ
+        data_json = self.get_data_from_json(json_path)
+        designation = data_json["designation"]
+        year = data_json["year"]
+        type = data_json["type"]
 
         # Оборачиваем чанки в словари с метаданными
-        for chunk_index, text in enumerate(blocks):
+        for text in blocks:
+            # Получаем первую строку блока и извлекаем номер пункта
             first = text.strip().split("\n", 1)[0] if text.strip() else ""
             m = _FIRST_LINE_NUM.match(first)
             first_item_number = m.group(1) if m else ""
@@ -298,35 +285,33 @@ class SPDocumentChunker:
             )
             clause_display_str = self.clause_display(nums)
 
-            # Получаем год и код из JSON-файла
-            data_json = self.get_data_from_json(json_path)
-            designation = data_json["designation"]
-            year = data_json["year"]
-            type = data_json["type"]
+            # Проверяем, если токены в блоке больше максимума, то разбиваем на чанки
+            cur_token_count = self.embedder.count_tokens(text)
+            pieces = [text] if cur_token_count <= self.max_block_tokens else self.split_text_into_chunks(text)
 
-            result.append(
-                {
-                    "text": text,
-                    "metadata": {
-                        "qdrant_point_id": str(uuid.uuid4()),
-                        "designation": designation,
-                        "year": year,
-                        "type": type,
-                        "chunk_index": chunk_index,
-                        "section_id": None,
-                        "first_item_number": first_item_number,
-                        "clause_start": clause_start,
-                        "clause_end": clause_end,
-                        "section_path": section_path,
-                        "clause_numbers": nums,
-                        "clause_display": clause_display_str,
-                        "merged_clauses_count": len(nums),
-                        "content_type": "text",
-                        "parent_chunk_id": None,
-                        "content_url": None,
-                        "text_content": text,
-                        "token_count": self.embedder.count_tokens(text),
-                    },
-                }
-            )
+            for piece in pieces:
+                result.append(
+                    {
+                        "metadata": {
+                            "qdrant_point_id": str(uuid.uuid4()),
+                            "designation": designation,
+                            "year": year,
+                            "type": type,
+                            "chunk_index": len(result),
+                            "section_id": None,
+                            "first_item_number": first_item_number,
+                            "clause_start": clause_start,
+                            "clause_end": clause_end,
+                            "section_path": section_path,
+                            "clause_numbers": nums,
+                            "clause_display": clause_display_str,
+                            "merged_clauses_count": len(nums),
+                            "content_type": "text",
+                            "parent_chunk_id": None,
+                            "content_url": None,
+                            "text_content": piece,
+                            "token_count": self.embedder.count_tokens(piece),
+                        },
+                    }
+                )
         return result

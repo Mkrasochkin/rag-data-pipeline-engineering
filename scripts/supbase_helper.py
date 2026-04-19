@@ -1,21 +1,32 @@
-import os
-
-from dotenv import load_dotenv
-from supabase import create_client, Client
-
-
-load_dotenv(override=True)
+from supabase import Client, ClientOptions, create_client
 
 
 class SupabaseHelper:
     def __init__(
         self,
         *,
-        supabase_url: str = os.getenv("SUPABASE_URL"),
-        supabase_key: str = os.getenv("SUPABASE_PUBLIC_KEY_LONG")
+        supabase_url: str,
+        supabase_key: str,
     ):
-        self.supabase_url = supabase_url
-        self.supabase_key = supabase_key
+        self.client = create_client(
+            supabase_url,
+            supabase_key,
+            options=ClientOptions(postgrest_client_timeout=10),
+        )
 
     def get_supabase_client(self) -> Client:
-        return create_client(self.supabase_url, self.supabase_key)
+        """
+        Возвращает Supabase client.
+        """
+        return self.client
+
+    def check_connection(self) -> bool:
+        """
+        Проверяет соединение с Supabase.
+        """
+        try:
+            self.get_supabase_client().table("documents").select("*").execute()
+            return True
+        except Exception as e:
+            print(f"Ошибка при проверке соединения с Supabase: {e}")
+            return False

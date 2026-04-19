@@ -1,16 +1,11 @@
-# Секреты
-.env
-
-# Тестовые файлы
-test.py
-test_connect.py
-
-# Промежуточные файлы
-output/
-data/
 qdrant_data/
 __pycache__/
 .pytest_cache/
+test.py
+test_connect.py
+
+# Секреты
+.env
 .env.example
 .env.local
 .env.development.local
@@ -18,6 +13,8 @@ __pycache__/
 .env.production.local
 chunks_preview_100.txt
 
+
 # Output директории
+output/
 .output/cleaned
 .output/json

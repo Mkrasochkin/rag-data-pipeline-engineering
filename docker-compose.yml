@@ -12,4 +12,3 @@ services:
       - qdrant_storage:/qdrant/storage
 volumes:
   qdrant_storage:
-  
