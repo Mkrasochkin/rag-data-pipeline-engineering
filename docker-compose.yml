@@ -6,8 +6,8 @@ services:
     container_name: svodpro_qdrant
     restart: unless-stopped
     ports:
-      - "0.0.0.0:6333:6333"
-      - "0.0.0.0:6334:6334"
+      - "6333:6333"
+      - "6334:6334"
     volumes:
       - qdrant_storage:/qdrant/storage
 volumes:
