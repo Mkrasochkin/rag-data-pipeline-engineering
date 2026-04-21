@@ -20,72 +20,30 @@ PROJECT_ROOT = pathlib.Path(__file__).parent
 load_dotenv(PROJECT_ROOT / ".env", override=True)
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_PUBLIC_KEY_LONG")
+SUPBASE_PUBLIC_KEY_LONG = os.getenv("SUPABASE_PUBLIC_KEY_LONG")
 
 QDRANT_HOST = os.getenv("QDRANT_HOST")
 QDRANT_PORT = os.getenv("QDRANT_PORT")
 QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
 
 
-def write_chunks_preview(
-    *,
-    chunks: list[dict],
-    output_path: pathlib.Path,
-    limit: int = 100,
-) -> None:
-    """
-    Сохраняет превью первых N чанков в формате BLOCK + текст,
-    а также печатает metadata без текстовых полей.
-    """
-    selected_chunks = chunks[:limit]
-    with output_path.open("w", encoding="utf-8") as f:
-        for i, chunk in enumerate(selected_chunks):
-            metadata = dict(chunk.get("metadata", {}))
-            text = metadata.get("text_content", "") or ""
-            metadata.pop("text", None)
-            metadata.pop("text_content", None)
-
-            f.write("=" * 80 + "\n")
-            f.write(f"BLOCK {i}  ({len(text)} символов)\n")
-            f.write("=" * 80 + "\n")
-            f.write(f"{text}\n\n")
-            f.write("METADATA\n")
-            f.write("-" * 80 + "\n")
-            f.write(f"{json.dumps(metadata, ensure_ascii=False, indent=2)}\n\n")
-
-    print(f"Превью чанков сохранено: {output_path}")
 
 
 def main() -> None:
     try:
         embedder = Embedder()
-        # Получаем чанки из чистого файла
-        chunker = SPDocumentChunker(embedder=embedder)
-        _md = PROJECT_ROOT / "output" / "cleaned"
-        path = _md / "СП_48_13330_2019.md"
-        raw = path.read_text(encoding="utf-8")
-        with_meta = chunker.add_metadata(
-            blocks=chunker.split_plain_sp_into_blocks(raw),
-            document_text=raw,
-        )
-
-
-        preview_path = PROJECT_ROOT / "chunks_preview_100.txt"
-        write_chunks_preview(chunks=with_meta, output_path=preview_path, limit=100)
-
-        # Подключаемся к Supabase и заливаем чанки в таблицу chunks
+        # Читаем чанки из Supabase
         supabase_helper = SupabaseHelper(supabase_url=SUPABASE_URL, supabase_key=SUPBASE_PUBLIC_KEY_LONG)
-        # Проверяем соединение с Supabase
         if not supabase_helper.check_connection():
             print("Не удалось подключиться к Supabase")
             return
         supabase_client = supabase_helper.get_supabase_client()
-
-        # Вставляем чанки в таблицу chunks
         chunks_upsert = SupabaseChunksUpserter(supabase_client=supabase_client)
-        sub_rows = chunks_upsert.insert_chunks(chunks=with_meta)
-        qdrant_points = embed_vector_rows_to_qdrant_points(embedder, sub_rows)
-        print(f"Готово точек для Qdrant: {len(qdrant_points)}")
+        chunks = chunks_upsert.read_chunks(doc_id="33cafd34-aaf2-42ce-b14c-3c497bb32efb")
+        print(f"Чанки прочитаны из Supabase: {len(chunks)}")
+
+        qdrant_points = embed_vector_rows_to_qdrant_points(embedder, chunks)
+        print(f"Чанки векторизованы: {len(qdrant_points)}")
 
         # Подключаемся к Qdrant
         qdrant_helper = QdrantHelper(qdrant_host=QDRANT_HOST, qdrant_port=QDRANT_PORT, qdrant_api_key=QDRANT_API_KEY)

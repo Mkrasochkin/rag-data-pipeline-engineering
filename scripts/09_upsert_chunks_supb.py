@@ -164,3 +164,25 @@ class SupabaseChunksUpserter:
             raise ValueError("Не удалось вставить чанки в таблицу chunks.")
 
         return vector_rows
+
+    def read_chunks(
+        self,
+        *,
+        doc_id: str,
+    ) -> list[dict]:
+        """
+        Читает чанки из таблицы chunks.
+        """
+        response = self.supabase_client.table("chunks").select("*").eq("doc_id", doc_id).execute()
+        rows = response.data or []
+        for row in rows:
+            row["text"] = row.get("text_content")
+            row["point_id"] = row.get("id")
+            row["payload"] = {
+                "workspace_id": row.get("workspace_id"),
+                "doc_id": row.get("doc_id"),
+                "clause_number": row.get("clause_start"),
+                "content_type": row.get("content_type"),
+                "chunk_id": row.get("id"),
+            }
+        return rows
