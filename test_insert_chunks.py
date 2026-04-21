@@ -74,7 +74,7 @@ def main() -> None:
         write_chunks_preview(chunks=with_meta, output_path=preview_path, limit=100)
 
         # Подключаемся к Supabase и заливаем чанки в таблицу chunks
-        supabase_helper = SupabaseHelper(supabase_url=SUPABASE_URL, supabase_key=SUPBASE_PUBLIC_KEY_LONG)
+        supabase_helper = SupabaseHelper(supabase_url=SUPABASE_URL, supabase_key=SUPABASE_KEY)
         # Проверяем соединение с Supabase
         if not supabase_helper.check_connection():
             print("Не удалось подключиться к Supabase")

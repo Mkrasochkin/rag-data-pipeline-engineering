@@ -48,11 +48,6 @@ _TABLE_HARD_BOUNDARY = re.compile(
     r"^\s*(?:Приложение\s+[А-ЯA-Z]|СП\s+\d|#{1,6}\s+|(?:\d{1,3}(?:\.\d{1,3})+|\d{1,2})\s+)",
     re.IGNORECASE,
 )
-# # Первая строка в начале файла для СП с выделением кода документа.
-# _FIRST_LINE_SP = re.compile(
-#     r"^\s*(?:#+\s*)?(?P<title>СП\s*(?P<designation>\d+(?:\.\d+)*).*)$",
-#     re.MULTILINE,
-# )
 
 
 class SPDocumentChunker:

@@ -3,6 +3,8 @@ __pycache__/
 .pytest_cache/
 test.py
 test_connect.py
+test_insert_chunks.py
+test_insert_chunks_for_DE.py
 
 # Секреты
 .env

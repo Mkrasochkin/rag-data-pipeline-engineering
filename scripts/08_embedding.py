@@ -50,5 +50,6 @@ class Embedder:
         ids = self.model.tokenizer.encode(
             text,
             add_special_tokens=True,
+            verbose=False,  # не предупреждать о длине при подсчёте токенов
         )
         return len(ids)
