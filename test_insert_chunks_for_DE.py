@@ -39,6 +39,8 @@ def main() -> None:
             return
         supabase_client = supabase_helper.get_supabase_client()
         chunks_upsert = SupabaseChunksUpserter(supabase_client=supabase_client)
+
+        # Тестовая привязка к документу
         chunks = chunks_upsert.read_chunks(doc_id="33cafd34-aaf2-42ce-b14c-3c497bb32efb")
         print(f"Чанки прочитаны из Supabase: {len(chunks)}")
 

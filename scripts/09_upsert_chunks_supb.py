@@ -114,8 +114,8 @@ class SupabaseChunksUpserter:
             metadata = chunk["metadata"]
             section_id = (
                 metadata.get("section_id")
-                or section_ids_by_code.get(metadata.get("section_code", None))
-                or section_ids_by_code.get(metadata.get("clause_start", None))
+                or section_ids_by_code.get(metadata.get("section_code"))
+                or section_ids_by_code.get(metadata.get("clause_start"))
             )
 
             records.append(
@@ -172,17 +172,29 @@ class SupabaseChunksUpserter:
     ) -> list[dict]:
         """
         Читает чанки из таблицы chunks.
+
+        Args:
+            doc_id: id документа, который нужно прочитать
         """
+        vector_rows: list[dict] = []
         response = self.supabase_client.table("chunks").select("*").eq("doc_id", doc_id).execute()
+        if not response.data:
+            print(f"Не найдено чанков для документа {doc_id}")
+            return []
         rows = response.data or []
-        for row in rows:
-            row["text"] = row.get("text_content")
-            row["point_id"] = row.get("id")
-            row["payload"] = {
-                "workspace_id": row.get("workspace_id"),
-                "doc_id": row.get("doc_id"),
-                "clause_number": row.get("clause_start"),
-                "content_type": row.get("content_type"),
-                "chunk_id": row.get("id"),
+        vector_rows.extend(
+            {
+                "text": row.get("text_content"),
+                "point_id": row.get("id"),
+                "payload": {
+                    "workspace_id": row.get("workspace_id"),
+                    "doc_id": row.get("doc_id"),
+                    "clause_number": row.get("clause_start"),
+                    "content_type": row.get("content_type"),
+                    "chunk_id": row.get("id"),
+                },
             }
-        return rows
+            for row in rows
+            if row.get("id")
+        )
+        return vector_rows
