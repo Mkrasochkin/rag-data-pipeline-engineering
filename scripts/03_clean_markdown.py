@@ -302,7 +302,10 @@ def get_clean_filename(metadata: Dict, original_filename: str) -> str:
         return f"СП_{metadata['designation'].replace('.', '_')}.md"
     name = original_filename.replace('.md', '')
     name = re.sub(r'[<>:"/\\|?*]', '', name)
-    return f"{re.sub(r'\s+', '_', name)}_clean.md"
+    # Сначала обрабатываем имя, потом вставляем в строку
+    clean_name = re.sub(r'\s+', '_', name)
+    return f"{clean_name}_clean.md"
+
 
 def process_document(md_file: Path, topics_data: Dict) -> Optional[Dict]:
     print(f"\n🔍 Обработка: {md_file.name}")
