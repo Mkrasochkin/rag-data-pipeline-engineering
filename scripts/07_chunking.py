@@ -31,16 +31,11 @@ _FIRST_LINE_NUM = re.compile(
     r"^\s*((?:\d{1,3}(?:\.\d{1,3})+)|(?:\d{1,2}))\s*\.?\s+",
 )
 
+
 # Старт табличного блока (в т.ч. OCR-варианты: "аблица", "Т а б л и ц а").
 _TABLE_START = re.compile(
     r"^\s*(?:#+\s*)?(?:(?:Окончание|Продолжение)\s+)?(?:[ТT]\s*а\s*б\s*л\s*и\s*ц\s*а|[ТT]?аблица)\s*[A-Za-zА-Яа-я0-9\.\-]*\s*$",
-    re.IGNORECASE,
-)
-
-# Линии, которые часто встречаются внутри таблиц.
-_TABLE_RELATED = re.compile(
-    r"^\s*(?:\||[-:]{3,}|[*#•]+|\d+\s+\d+(?:\s+\d+){1,}|(?:[A-Za-zА-Яа-я0-9].*\|.*)|(?:\(.+\))|(?:Примечани[ея].*))",
-    re.IGNORECASE,
+    re.IGNORECASE | re.MULTILINE,
 )
 
 # Заголовки/границы, после которых таблица обычно заканчивается.
@@ -108,6 +103,39 @@ class SPDocumentChunker:
             first_parts[:-1] == second_parts[:-1]
         )
 
+    def filter_false_boundaries(self, matches: list[re.Match[str]]) -> list[re.Match[str]]:
+        """
+        Убираем ложные границы sec после sub.
+
+        Args:
+            matches: список совпадений для склеивания
+        """
+        if not matches:
+            return []
+
+        result: list[re.Match[str]] = []
+        last: re.Match[str] | None = None
+
+        for m in matches:
+            sec = m.group("sec")
+
+            if sec is not None and last is not None:
+                prev_sub = last.group("sub")
+
+                if prev_sub is not None:
+                    try:
+                        prev_sub_int = int(prev_sub.split(".", 1)[0])
+                        sec_int = int(sec)
+                        if sec_int < prev_sub_int:
+                            # Убираем ложную границу
+                            continue
+                    except ValueError:
+                        pass
+            result.append(m)
+            last = m
+
+        return result
+
     def split_plain_sp_into_blocks(self, text: str) -> list[str]:
         """
         Разбивает текст на чанки по пунктам и возвращает список чанков.
@@ -118,6 +146,7 @@ class SPDocumentChunker:
         """
         # Ищем пункты в тексте
         matches = list(_CLAUSE.finditer(text))
+        matches = self.filter_false_boundaries(matches)
         if not matches:
             if not text:
                 return []
@@ -135,6 +164,25 @@ class SPDocumentChunker:
             end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
             block = text[start:end].strip()
             if block:
+                # Ищем табличные блоки
+                # tables_blocks_start = list(_TABLE_START.finditer(block))
+                # if tables_blocks_start:
+                #     # Берем срез текста от начало таблицы до конца текста
+                #     block_start_table = block[tables_blocks_start[0].start():end]
+                #     tables_blocks_end = list(_TABLE_HARD_BOUNDARY.finditer(block_start_table))
+                #     for table_block_start in tables_blocks_start:
+                #         print("----------------START-------------")
+                #         print(block_start_table)
+                #         print(table_block_start.group(0))
+                #     if tables_blocks_end:
+                #         for table_block_end in tables_blocks_end:
+                #             print("----------------END-------------")
+                #             print(table_block_end.group(0))
+                first = block.strip().split("\n", 1)[0] if text.strip() else ""
+                m = _FIRST_LINE_NUM.match(first)
+                first_item_number = m.group(1) if m else ""
+                print(first_item_number)
+
                 blocks.append(block)
 
         return self.merge_minimal_blocks(blocks)
