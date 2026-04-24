@@ -114,25 +114,31 @@ class SPDocumentChunker:
             return []
 
         result: list[re.Match[str]] = []
-        last: re.Match[str] | None = None
+        in_list_after_sub = False
+        last_sub_head: int | None = None
 
         for m in matches:
+            sub = m.group("sub")
             sec = m.group("sec")
 
-            if sec is not None and last is not None:
-                prev_sub = last.group("sub")
+            # sub всегда настоящая граница
+            if sub is not None:
+                result.append(m)
+                in_list_after_sub = False
+                last_sub_head = int(sub.split(".")[0])
+                continue
+            elif sec is not None and last_sub_head is not None:
+                sec_int = int(sec)
 
-                if prev_sub is not None:
-                    try:
-                        prev_sub_int = int(prev_sub.split(".", 1)[0])
-                        sec_int = int(sec)
-                        if sec_int < prev_sub_int:
-                            # Убираем ложную границу
-                            continue
-                    except ValueError:
-                        pass
+                # Если мы в списке после подпункта, то пропускаем этот пункт
+                if in_list_after_sub:
+                    continue
+                # Если список только начался
+                if sec_int <= last_sub_head:
+                    in_list_after_sub = True
+                    continue
+
             result.append(m)
-            last = m
 
         return result
 
