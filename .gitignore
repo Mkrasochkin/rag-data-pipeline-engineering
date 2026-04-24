@@ -20,3 +20,11 @@ chunks_preview_100.txt
 output/
 .output/cleaned
 .output/json
+# Окружение и кэш
+venv/
+__pycache__/
+.DS_Store
+
+# Игнорируем тяжелые данные и результаты работы
+data/pdfs/*.pdf
+
