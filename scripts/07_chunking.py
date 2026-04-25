@@ -170,26 +170,47 @@ class SPDocumentChunker:
             end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
             block = text[start:end].strip()
             if block:
-                # Ищем табличные блоки
-                # tables_blocks_start = list(_TABLE_START.finditer(block))
-                # if tables_blocks_start:
-                #     # Берем срез текста от начало таблицы до конца текста
-                #     block_start_table = block[tables_blocks_start[0].start():end]
-                #     tables_blocks_end = list(_TABLE_HARD_BOUNDARY.finditer(block_start_table))
-                #     for table_block_start in tables_blocks_start:
-                #         print("----------------START-------------")
-                #         print(block_start_table)
-                #         print(table_block_start.group(0))
-                #     if tables_blocks_end:
-                #         for table_block_end in tables_blocks_end:
-                #             print("----------------END-------------")
-                #             print(table_block_end.group(0))
-                first = block.strip().split("\n", 1)[0] if text.strip() else ""
-                m = _FIRST_LINE_NUM.match(first)
-                first_item_number = m.group(1) if m else ""
-                print(first_item_number)
+                table_starts = list(_TABLE_START.finditer(block))
 
-                blocks.append(block)
+                # Если табличные блоки не найдены, то добавляем блок в список
+                if not table_starts:
+                    blocks.append(block)
+                    continue
+
+                #
+                table_ranges: list[tuple[int, int]] = []
+                for j, t in enumerate(table_starts):
+                    start_t = t.start()
+                    next_t = table_starts[j + 1].start() if j + 1 < len(table_starts) else len(block)
+
+                    hard_boundary = _TABLE_HARD_BOUNDARY.search(block, pos=start_t + 1)
+
+                    # Если жесткая граница найдена, то устанавливаем конец табличного блока на её координату
+                    # Иначе устанавливаем конец табличного блока на координату следующего табличного блокаs
+                    if hard_boundary:
+                        end_t = min(hard_boundary.start(), next_t)
+                    else:
+                        end_t = next_t
+                    # Подстраховка на случай некорректных границ
+                    end_t = max(start_t, end_t)
+                    table_ranges.append((start_t, end_t))
+
+                # Текстовые части block без таблиц
+                cursor = 0
+                for start_t, end_t in table_ranges:
+                    text_part = block[cursor:start_t].strip()
+                    if text_part:
+                        blocks.append(text_part)
+                    cursor = end_t
+                tail = block[cursor:].strip()
+                if tail:
+                    blocks.append(tail)
+
+                # Добавляем табличные блоки в список
+                for start_t, end_t in table_ranges:
+                    table_part = block[start_t:end_t].strip()
+                    if table_part:
+                        blocks.append(table_part)
 
         return self.merge_minimal_blocks(blocks)
 
