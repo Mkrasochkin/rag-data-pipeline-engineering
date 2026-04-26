@@ -31,16 +31,11 @@ _FIRST_LINE_NUM = re.compile(
     r"^\s*((?:\d{1,3}(?:\.\d{1,3})+)|(?:\d{1,2}))\s*\.?\s+",
 )
 
+
 # Старт табличного блока (в т.ч. OCR-варианты: "аблица", "Т а б л и ц а").
 _TABLE_START = re.compile(
     r"^\s*(?:#+\s*)?(?:(?:Окончание|Продолжение)\s+)?(?:[ТT]\s*а\s*б\s*л\s*и\s*ц\s*а|[ТT]?аблица)\s*[A-Za-zА-Яа-я0-9\.\-]*\s*$",
-    re.IGNORECASE,
-)
-
-# Линии, которые часто встречаются внутри таблиц.
-_TABLE_RELATED = re.compile(
-    r"^\s*(?:\||[-:]{3,}|[*#•]+|\d+\s+\d+(?:\s+\d+){1,}|(?:[A-Za-zА-Яа-я0-9].*\|.*)|(?:\(.+\))|(?:Примечани[ея].*))",
-    re.IGNORECASE,
+    re.IGNORECASE | re.MULTILINE,
 )
 
 # Заголовки/границы, после которых таблица обычно заканчивается.
@@ -108,6 +103,45 @@ class SPDocumentChunker:
             first_parts[:-1] == second_parts[:-1]
         )
 
+    def filter_false_boundaries(self, matches: list[re.Match[str]]) -> list[re.Match[str]]:
+        """
+        Убираем ложные границы sec после sub.
+
+        Args:
+            matches: список совпадений для склеивания
+        """
+        if not matches:
+            return []
+
+        result: list[re.Match[str]] = []
+        in_list_after_sub = False
+        last_sub_head: int | None = None
+
+        for m in matches:
+            sub = m.group("sub")
+            sec = m.group("sec")
+
+            # sub всегда настоящая граница
+            if sub is not None:
+                result.append(m)
+                in_list_after_sub = False
+                last_sub_head = int(sub.split(".")[0])
+                continue
+            elif sec is not None and last_sub_head is not None:
+                sec_int = int(sec)
+
+                # Если мы в списке после подпункта, то пропускаем этот пункт
+                if in_list_after_sub:
+                    continue
+                # Если список только начался
+                if sec_int <= last_sub_head:
+                    in_list_after_sub = True
+                    continue
+
+            result.append(m)
+
+        return result
+
     def split_plain_sp_into_blocks(self, text: str) -> list[str]:
         """
         Разбивает текст на чанки по пунктам и возвращает список чанков.
@@ -118,6 +152,7 @@ class SPDocumentChunker:
         """
         # Ищем пункты в тексте
         matches = list(_CLAUSE.finditer(text))
+        matches = self.filter_false_boundaries(matches)
         if not matches:
             if not text:
                 return []
@@ -135,7 +170,47 @@ class SPDocumentChunker:
             end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
             block = text[start:end].strip()
             if block:
-                blocks.append(block)
+                table_starts = list(_TABLE_START.finditer(block))
+
+                # Если табличные блоки не найдены, то добавляем блок в список
+                if not table_starts:
+                    blocks.append(block)
+                    continue
+
+                #
+                table_ranges: list[tuple[int, int]] = []
+                for j, t in enumerate(table_starts):
+                    start_t = t.start()
+                    next_t = table_starts[j + 1].start() if j + 1 < len(table_starts) else len(block)
+
+                    hard_boundary = _TABLE_HARD_BOUNDARY.search(block, pos=start_t + 1)
+
+                    # Если жесткая граница найдена, то устанавливаем конец табличного блока на её координату
+                    # Иначе устанавливаем конец табличного блока на координату следующего табличного блокаs
+                    if hard_boundary:
+                        end_t = min(hard_boundary.start(), next_t)
+                    else:
+                        end_t = next_t
+                    # Подстраховка на случай некорректных границ
+                    end_t = max(start_t, end_t)
+                    table_ranges.append((start_t, end_t))
+
+                # Текстовые части block без таблиц
+                cursor = 0
+                for start_t, end_t in table_ranges:
+                    text_part = block[cursor:start_t].strip()
+                    if text_part:
+                        blocks.append(text_part)
+                    cursor = end_t
+                tail = block[cursor:].strip()
+                if tail:
+                    blocks.append(tail)
+
+                # Добавляем табличные блоки в список
+                for start_t, end_t in table_ranges:
+                    table_part = block[start_t:end_t].strip()
+                    if table_part:
+                        blocks.append(table_part)
 
         return self.merge_minimal_blocks(blocks)
 
@@ -278,20 +353,34 @@ class SPDocumentChunker:
         type = data_json["type"]
 
         # Оборачиваем чанки в словари с метаданными
+        last_item_number: str | None = None
         for text in blocks:
             # Получаем первую строку блока и извлекаем номер пункта
             first = text.strip().split("\n", 1)[0] if text.strip() else ""
             m = _FIRST_LINE_NUM.match(first)
             first_item_number = m.group(1) if m else ""
+            content_type = "text" if first_item_number else "table"
 
             nums: list[str] = []
-            for cm in _CLAUSE.finditer(text):
-                d = cm.groupdict()
-                n = d.get("sub") or d.get("sec")
-                if n:
-                    nums.append(n)
+            # Для таблиц не извлекаем номера по _CLAUSE
+            if content_type == "text":
+                for cm in _CLAUSE.finditer(text):
+                    d = cm.groupdict()
+                    n = d.get("sub") or d.get("sec")
+                    if n:
+                        nums.append(n)
+
+            # Если тип контента таблица, но номера не найдены, то наследуем номера от предыдущего текстового блока
+            if content_type == "table" and not nums and last_item_number:
+                nums = [last_item_number]
+                first_item_number = last_item_number
+
             clause_start: str | None = nums[0] if nums else None
             clause_end: str | None = nums[-1] if nums else None
+            if nums:
+                last_item_number = nums[-1]
+            elif first_item_number:
+                last_item_number = first_item_number
             section_path = (
                 self.get_section_path(clause_start) if clause_start else None
             )
@@ -318,7 +407,7 @@ class SPDocumentChunker:
                             "clause_numbers": nums,
                             "clause_display": clause_display_str,
                             "merged_clauses_count": len(nums),
-                            "content_type": "text",
+                            "content_type": content_type,
                             "parent_chunk_id": None,
                             "content_url": None,
                             "text_content": piece,

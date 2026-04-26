@@ -14,6 +14,7 @@ test_insert_chunks_for_DE.py
 .env.test.local
 .env.production.local
 chunks_preview_100.txt
+chunks_preview_1000.txt
 
 
 # Output директории

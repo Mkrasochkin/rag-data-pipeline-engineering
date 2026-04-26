@@ -31,7 +31,7 @@ def write_chunks_preview(
     *,
     chunks: list[dict],
     output_path: pathlib.Path,
-    limit: int = 100,
+    limit: int = 1000,
 ) -> None:
     """
     Сохраняет превью первых N чанков в формате BLOCK + текст,
@@ -62,7 +62,8 @@ def main() -> None:
         # Получаем чанки из чистого файла
         chunker = SPDocumentChunker(embedder=embedder)
         _md = PROJECT_ROOT / "output" / "cleaned"
-        path = _md / "СП_48_13330_2019.md"
+        # path = _md / "СП_48_13330_2019.md"
+        path = _md / "СП_45_13330_2017.md"
         raw = path.read_text(encoding="utf-8")
         with_meta = chunker.add_metadata(
             blocks=chunker.split_plain_sp_into_blocks(raw),
@@ -70,39 +71,39 @@ def main() -> None:
         )
 
 
-        preview_path = PROJECT_ROOT / "chunks_preview_100.txt"
-        write_chunks_preview(chunks=with_meta, output_path=preview_path, limit=100)
+        preview_path = PROJECT_ROOT / "chunks_preview_1000.txt"
+        write_chunks_preview(chunks=with_meta, output_path=preview_path)
 
-        # Подключаемся к Supabase и заливаем чанки в таблицу chunks
-        supabase_helper = SupabaseHelper(supabase_url=SUPABASE_URL, supabase_key=SUPABASE_KEY)
-        # Проверяем соединение с Supabase
-        if not supabase_helper.check_connection():
-            print("Не удалось подключиться к Supabase")
-            return
-        supabase_client = supabase_helper.get_supabase_client()
+        # # Подключаемся к Supabase и заливаем чанки в таблицу chunks
+        # supabase_helper = SupabaseHelper(supabase_url=SUPABASE_URL, supabase_key=SUPABASE_KEY)
+        # # Проверяем соединение с Supabase
+        # if not supabase_helper.check_connection():
+        #     print("Не удалось подключиться к Supabase")
+        #     return
+        # supabase_client = supabase_helper.get_supabase_client()
 
-        # Вставляем чанки в таблицу chunks
-        chunks_upsert = SupabaseChunksUpserter(supabase_client=supabase_client)
-        sub_rows = chunks_upsert.insert_chunks(chunks=with_meta)
-        qdrant_points = embed_vector_rows_to_qdrant_points(embedder, sub_rows)
-        print(f"Готово точек для Qdrant: {len(qdrant_points)}")
+        # # Вставляем чанки в таблицу chunks
+        # chunks_upsert = SupabaseChunksUpserter(supabase_client=supabase_client)
+        # sub_rows = chunks_upsert.insert_chunks(chunks=with_meta)
+        # qdrant_points = embed_vector_rows_to_qdrant_points(embedder, sub_rows)
+        # print(f"Готово точек для Qdrant: {len(qdrant_points)}")
 
-        # Подключаемся к Qdrant
-        qdrant_helper = QdrantHelper(qdrant_host=QDRANT_HOST, qdrant_port=QDRANT_PORT, qdrant_api_key=QDRANT_API_KEY)
-        if not qdrant_helper.check_connection():
-            print("Не удалось подключиться к Qdrant")
-            return
+        # # Подключаемся к Qdrant
+        # qdrant_helper = QdrantHelper(qdrant_host=QDRANT_HOST, qdrant_port=QDRANT_PORT, qdrant_api_key=QDRANT_API_KEY)
+        # if not qdrant_helper.check_connection():
+        #     print("Не удалось подключиться к Qdrant")
+        #     return
 
-        qdrant_client = qdrant_helper.get_qdrant_client()
+        # qdrant_client = qdrant_helper.get_qdrant_client()
 
-        # Вставляем чанки в Qdrant
-        qdrant_insertor = QdrantInsertor(qdrant_client=qdrant_client)
-        qdrant_insertor.create_collection(
-            collection_name="test_chunks",
-            vector_size=embedder.get_embedding_dimension(),
-        )
-        qdrant_insertor.insert_chunks(chunks=qdrant_points, collection_name="test_chunks")
-        print("Чанки вставлены в Qdrant")
+        # # Вставляем чанки в Qdrant
+        # qdrant_insertor = QdrantInsertor(qdrant_client=qdrant_client)
+        # qdrant_insertor.create_collection(
+        #     collection_name="test_chunks",
+        #     vector_size=embedder.get_embedding_dimension(),
+        # )
+        # qdrant_insertor.insert_chunks(chunks=qdrant_points, collection_name="test_chunks")
+        # print("Чанки вставлены в Qdrant")
 
 
     except Exception as error:
