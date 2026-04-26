@@ -353,20 +353,34 @@ class SPDocumentChunker:
         type = data_json["type"]
 
         # Оборачиваем чанки в словари с метаданными
+        last_item_number: str | None = None
         for text in blocks:
             # Получаем первую строку блока и извлекаем номер пункта
             first = text.strip().split("\n", 1)[0] if text.strip() else ""
             m = _FIRST_LINE_NUM.match(first)
             first_item_number = m.group(1) if m else ""
+            content_type = "text" if first_item_number else "table"
 
             nums: list[str] = []
-            for cm in _CLAUSE.finditer(text):
-                d = cm.groupdict()
-                n = d.get("sub") or d.get("sec")
-                if n:
-                    nums.append(n)
+            # Для таблиц не извлекаем номера по _CLAUSE
+            if content_type == "text":
+                for cm in _CLAUSE.finditer(text):
+                    d = cm.groupdict()
+                    n = d.get("sub") or d.get("sec")
+                    if n:
+                        nums.append(n)
+
+            # Если тип контента таблица, но номера не найдены, то наследуем номера от предыдущего текстового блока
+            if content_type == "table" and not nums and last_item_number:
+                nums = [last_item_number]
+                first_item_number = last_item_number
+
             clause_start: str | None = nums[0] if nums else None
             clause_end: str | None = nums[-1] if nums else None
+            if nums:
+                last_item_number = nums[-1]
+            elif first_item_number:
+                last_item_number = first_item_number
             section_path = (
                 self.get_section_path(clause_start) if clause_start else None
             )
@@ -393,7 +407,7 @@ class SPDocumentChunker:
                             "clause_numbers": nums,
                             "clause_display": clause_display_str,
                             "merged_clauses_count": len(nums),
-                            "content_type": "text",
+                            "content_type": content_type,
                             "parent_chunk_id": None,
                             "content_url": None,
                             "text_content": piece,
