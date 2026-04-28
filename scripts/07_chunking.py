@@ -332,8 +332,7 @@ class SPDocumentChunker:
         self,
         *,
         blocks: list[str],
-        document_text: str | None = None,
-        json_path: Path = JSON_DIR / "СП_48_13330_2019.json",
+        json_path: Path,
     ) -> list[dict]:
         """
         Оборачивает разбитые на чанки тексты в словари с метаданными.

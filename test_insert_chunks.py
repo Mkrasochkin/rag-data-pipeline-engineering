@@ -31,7 +31,7 @@ def write_chunks_preview(
     *,
     chunks: list[dict],
     output_path: pathlib.Path,
-    limit: int = 1000,
+    limit: int = 10000,
 ) -> None:
     """
     Сохраняет превью первых N чанков в формате BLOCK + текст,
@@ -63,15 +63,16 @@ def main() -> None:
         chunker = SPDocumentChunker(embedder=embedder)
         _md = PROJECT_ROOT / "output" / "cleaned"
         # path = _md / "СП_48_13330_2019.md"
-        path = _md / "СП_45_13330_2017.md"
+        sp = "СП_118_13330_2022"
+        path = _md / f"{sp}.md"
         raw = path.read_text(encoding="utf-8")
         with_meta = chunker.add_metadata(
             blocks=chunker.split_plain_sp_into_blocks(raw),
-            document_text=raw,
+            json_path=PROJECT_ROOT / "output" / "json" / f"{sp}.json",
         )
 
 
-        preview_path = PROJECT_ROOT / "chunks_preview_1000.txt"
+        preview_path = PROJECT_ROOT / f"{sp}_chunks_preview_10000.txt"
         write_chunks_preview(chunks=with_meta, output_path=preview_path)
 
         # # Подключаемся к Supabase и заливаем чанки в таблицу chunks
