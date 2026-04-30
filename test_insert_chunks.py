@@ -63,7 +63,7 @@ def main() -> None:
         chunker = SPDocumentChunker(embedder=embedder)
         _md = PROJECT_ROOT / "output" / "cleaned"
         # path = _md / "СП_48_13330_2019.md"
-        sp = "СП_48_13330_2019"
+        sp = "СП_20_13330_2016"
         path = _md / f"{sp}.md"
         raw = path.read_text(encoding="utf-8")
         with_meta = chunker.add_metadata(

@@ -363,7 +363,9 @@ class SPDocumentChunker:
             nums: list[str] = []
             # Для таблиц не извлекаем номера по _CLAUSE
             if content_type == "text":
-                for cm in _CLAUSE.finditer(text):
+                clause_matches = list(_CLAUSE.finditer(text))
+                filtered_clause_matches = self.filter_false_boundaries(clause_matches)
+                for cm in filtered_clause_matches:
                     d = cm.groupdict()
                     n = d.get("sub") or d.get("sec")
                     if n:

@@ -17,6 +17,7 @@ chunks_preview_100.txt
 chunks_preview_1000.txt
 
 
+
 # Output директории
 output/
 .output/cleaned
@@ -28,4 +29,4 @@ __pycache__/
 
 # Игнорируем тяжелые данные и результаты работы
 data/pdfs/*.pdf
-
+СП_48_13330_2019_chunks_preview_10000.txt
