@@ -252,12 +252,13 @@ CREATE POLICY user_workspaces_select_policy ON user_workspaces
     USING (user_id = get_current_user_id());
 
 -- ----------------------------------------------------------------------------
--- users: публичная информация о пользователях видна всем DS
+-- users: Доступ к таблице users для DS команды (SELECT, INSERT, UPDATE, DELETE)
 -- ----------------------------------------------------------------------------
-CREATE POLICY users_select_policy ON users
-    FOR SELECT
+CREATE POLICY users_ds_policy ON public.users
+    FOR ALL
     TO authenticated
-    USING (true);
+    USING (true)
+    WITH CHECK (true);
 
 -- ----------------------------------------------------------------------------
 -- workspaces: только те, куда пользователь имеет доступ
@@ -278,6 +279,7 @@ GRANT USAGE ON SCHEMA public TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON chat_sessions TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON messages TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON query_cache TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON users TO authenticated;
 
 -- Таблицы только для чтения
 GRANT SELECT ON chunks TO authenticated;
@@ -289,7 +291,6 @@ GRANT SELECT ON glossary_terms TO authenticated;
 GRANT SELECT ON projects TO authenticated;
 GRANT SELECT ON subscription_plans TO authenticated;
 GRANT SELECT ON user_workspaces TO authenticated;
-GRANT SELECT ON users TO authenticated;
 GRANT SELECT ON workspaces TO authenticated;
 
 -- ============================================================================

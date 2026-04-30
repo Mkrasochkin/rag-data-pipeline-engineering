@@ -11,6 +11,9 @@ CREATE TABLE users (
     -- Email пользователя. Уникальный идентификатор для входа в систему.
     -- TEXT выбран для гибкости (нет жесткого ограничения длины как у VARCHAR).
     email TEXT UNIQUE NOT NULL,
+
+    -- Уникальный идентификатор пользователя в Telegram.
+    id_telegram BIGINT CHECK (id_telegram > 0) UNIQUE,
     
     -- Тип личной подписки пользователя. По умолчанию 'free'.
     -- Допустимые значения: 'free', 'pro', 'enterprise'.
