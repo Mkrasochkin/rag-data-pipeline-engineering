@@ -10,7 +10,7 @@
 import re
 import json
 from pathlib import Path
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Tuple
 
 PROJECT_ROOT = Path(__file__).parent.parent
 INPUT_DIR = PROJECT_ROOT / "output" / "markdown"
@@ -18,6 +18,16 @@ CLEANED_DIR = PROJECT_ROOT / "output" / "cleaned"
 OUTPUT_DIR = PROJECT_ROOT / "output" / "json"
 TOPICS_FILE = PROJECT_ROOT / "sp_topics.json"
 
+
+def _strip_json_recursive(obj):
+    """Рекурсивно убирает пробелы в строках JSON."""
+    if isinstance(obj, dict):
+        return {k: _strip_json_recursive(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_strip_json_recursive(v) for v in obj]
+    elif isinstance(obj, str):
+        return obj.strip()
+    return obj
 
 def load_topics() -> Dict:
     """Загружает классификатор тематик СП из sp_topics.json"""
@@ -68,6 +78,127 @@ def get_topic_for_sp(sp_number: str, topics_data: Dict) -> str:
                 
     # 4. Тематика не определена
     return topics_data.get("default_topic", "Строительство")
+
+def strip_markdown_formatting(text: str) -> str:
+    """
+    Удаляет базовую Markdown-разметку, чтобы не мешать
+    последующим текстовым regex-парсерам.
+    """
+    # Удаляем заголовки Markdown (#, ##, ### и т.д.), оставляя текст заголовка
+    # r'^#{1,6}\s+' -> заменить на пустую строку. 
+    # flags=re.MULTILINE важен, чтобы ^ работал для каждой строки
+    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
+    
+    # Можно добавить удаление других элементов разметки, если нужно:
+    # text = re.sub(r'\*\*(.*?)\*\*', r'\1', text) # жирный
+    # text = re.sub(r'\*(.*?)\*', r'\1', text)     # курсив
+    
+    return text
+
+def fix_word_spacing(text: str) -> str:
+    """
+    Исправляет пробелы в середине русских слов.
+    Пример: "н а з в а н и е" -> "название"
+    """
+    pattern = re.compile(r'\b([а-яё])\s+([а-яё])\s+([а-яё])', re.IGNORECASE)
+    
+    prev_text = ""
+    current_text = text
+    iterations = 0
+    
+    while prev_text != current_text and iterations < 10:
+        prev_text = current_text
+        current_text = pattern.sub(r'\1\2\3', current_text)
+        iterations += 1
+    
+    if iterations > 1:
+        print(f"    ✓ Исправлены пробелы в словах (проходов: {iterations})")
+    
+    return current_text
+
+
+def remove_table_of_contents(text: str) -> Tuple[str, bool]:
+    """
+    Обнаруживает и удаляет содержание (оглавление) из текста.
+    Поддерживает обычное и табличное содержание.
+    """
+    lines = text.split('\n')
+    
+    # Маркеры начала содержания
+    toc_start_markers = [
+        r'^\s*СОДЕРЖАНИЕ\s*$',
+        r'^\s*Содержание\s*$',
+        r'^\s*Оглавление\s*$',
+    ]
+    
+    # Маркеры строк, похожих на содержание
+    toc_content_markers = [
+        r'^\s*\d+(\.\d+)*\s+[А-ЯЁ].+\.{3,}',       # "1.1 Название....... 5"
+        r'^\s*\d+(\.\d+)*\s+[А-ЯЁ].+\d{1,3}$',      # "1.1 Название 5"
+        r'^\s*\d+(\.\d+)*\s+[А-ЯЁ]',                 # "1.1 Название"
+        r'^\|\s*\d+',                                 # Табличная строка (markdown)
+    ]
+    
+    # Маркеры конца содержания
+    toc_end_markers = [
+        r'^\s*1\.\s+Область\s+применения',
+        r'^\s*1\s+Область\s+применения',
+        r'^\s*ВВЕДЕНИЕ\s*$',
+        r'^\s*Введение\s*$',
+        r'^\s*ПРЕДИСЛОВИЕ\s*$',
+    ]
+    
+    # Ищем начало содержания
+    toc_start = None
+    for i, line in enumerate(lines[:100]):
+        for marker in toc_start_markers:
+            if re.match(marker, line.strip(), re.IGNORECASE):
+                toc_start = i
+                break
+        if toc_start is not None:
+            break
+    
+    if toc_start is None:
+        return text, False
+    
+    # Ищем конец содержания
+    toc_end = None
+    toc_content_count = 0
+    
+    for i in range(toc_start + 1, min(toc_start + 200, len(lines))):
+        line = lines[i].strip()
+        
+        for marker in toc_end_markers:
+            if re.match(marker, line, re.IGNORECASE):
+                toc_end = i
+                break
+        if toc_end is not None:
+            break
+        
+        for marker in toc_content_markers:
+            if re.match(marker, line, re.IGNORECASE):
+                toc_content_count += 1
+                break
+        
+        if i > toc_start + 3 and toc_content_count == 0:
+            return text, False
+    
+    if toc_end is None and toc_content_count > 3:
+        for i in range(toc_start + 3, min(toc_start + 200, len(lines))):
+            if not lines[i].strip():
+                for j in range(i + 1, min(i + 5, len(lines))):
+                    if lines[j].strip() and re.match(r'^\s*\d+[\s\.]+[А-ЯЁ]', lines[j]):
+                        toc_end = i
+                        break
+                if toc_end:
+                    break
+    
+    if toc_end:
+        cleaned_lines = lines[:toc_start] + lines[toc_end:]
+        print(f"    ✓ Удалено содержание (строки {toc_start}-{toc_end})")
+        return '\n'.join(cleaned_lines), True
+    
+    return text, False
 
 def extract_metadata_from_text(text: str, filename: str, topics_data: Dict = None) -> Dict:
     """Извлекает метаданные из текста документа."""
@@ -124,6 +255,7 @@ def extract_metadata_from_text(text: str, filename: str, topics_data: Dict = Non
         r'СВОД\s+ПРАВИЛ\s*\n+\s*([А-ЯЁA-Z][А-ЯЁA-Z\s\-]+?)(?:\n|$)',
         r'СП\s*\d+\.\d+\.\d+\s*\n+\s*СВОД\s+ПРАВИЛ\s*\n+\s*([А-ЯЁA-Z][А-ЯЁA-Z\s\-]+?)(?:\n|$)',
         r'СП\s*\d+\.\d+\.\d+\s*\n+\s*([А-ЯЁA-Z][А-ЯЁA-Z\s\-]{5,80}?)(?:\n|$)',
+        r'СВОД\s+ПРАВИЛ\s*\n+\s*([А-ЯЁA-Z][А-ЯЁA-Z\s\-]{5,80}?)\s*\n',
     ]
     for pattern in title_patterns:
         match = re.search(pattern, search_text, re.IGNORECASE | re.MULTILINE | re.DOTALL)
@@ -158,7 +290,7 @@ def extract_metadata_from_text(text: str, filename: str, topics_data: Dict = Non
             print(f"    ✓ Найдена дата введения: {metadata['valid_from']}")
             break
             
-    # 4. Обязательность
+    # 4. Обязательность (Для СП все обязательные. Переделать для других документов.)
     if re.search(r'обязательный|обязательного|носит\s+обязательный', search_text, re.IGNORECASE):
         metadata["is_mandatory"] = True
         print(f"    ✓ Документ имеет обязательный характер")
@@ -197,10 +329,18 @@ def parse_filename_metadata(filename: str) -> Dict:
     return {"type": "СП", "designation": "", "year": 0, "official_title": name.replace('_', ' ')}
 
 def clean_text(text: str) -> str:
-    """Базовая очистка текста."""
+    """Базовая очистка текста + исправление пробелов + удаление содержания."""
+    # 1. Исправляем пробелы в словах
+    text = fix_word_spacing(text)
+    
+    # 2. Склеиваем слова, разорванные переносом
     text = re.sub(r'(\w+)-\n(\w+)', r'\1\2', text)
     text = re.sub(r'(\w+)-\n\s+(\w+)', r'\1\2', text)
     
+    # 3. Удаляем содержание
+    text, _ = remove_table_of_contents(text)
+    
+    # 4. Построчная очистка (оригинальная)
     lines = text.split('\n')
     cleaned_lines = []
     trash_patterns = [
@@ -245,6 +385,12 @@ def extract_main_content(text: str) -> str:
             break
     if end_pos: text = text[:end_pos]
     return text.strip()
+
+def normalize_section_headers(text: str) -> str:
+    """Гарантирует, что заголовки разделов имеют формат 'X Название' без точки"""
+    # Заменяем '1. Область применения' -> '1 Область применения'
+    text = re.sub(r'^(\d+)\.\s+([А-ЯA-Z])', r'\1 \2', text, flags=re.MULTILINE)
+    return text
 
 def extract_sections(text: str) -> List[Dict]:
     """Разбивает текст на секции по заголовкам."""
@@ -306,6 +452,60 @@ def get_clean_filename(metadata: Dict, original_filename: str) -> str:
     clean_name = re.sub(r'\s+', '_', name)
     return f"{clean_name}_clean.md"
 
+def remove_list_markers(text: str) -> str:
+    """
+    Удаляет маркеры списков в начале строк, которые являются частью
+    форматирования документа, а не значимым текстом.
+    
+    Обрабатывает:
+    - Одинарные дефисы: "- 1.1 Текст..." -> "1.1 Текст..."
+    - Длинные тире: "— 1.1 Текст..." -> "1.1 Текст..."  
+    - Маркеры списков: "• 1.1 Текст..." -> "1.1 Текст..."
+    - Звёздочки: "* 1.1 Текст..." -> "1.1 Текст..."
+    
+    При этом сохраняет:
+    - Дефисы внутри слов: "санитарно-эпидемиологические"
+    - Тире как знаки препинания: "условий - обеспечение"
+    - Номера с дефисами: "12-01-2004"
+    """
+    
+    # Паттерн 1: Убираем одиночный дефис/тире в начале строки
+    # Пример: "- 1.1 Текст..." -> "1.1 Текст..."
+    text = re.sub(
+        r'^[\-\–\—]\s+(?=\d+\.?\d*)',  # дефис/тире + пробел + (цифры с точкой)
+        '',                              # заменяем на пустую строку
+        text,
+        flags=re.MULTILINE
+    )
+    
+    # Паттерн 2: Убираем маркер списка + заголовок секции
+    # Пример: "- 4.2.1 Текст..." -> "4.2.1 Текст..."
+    text = re.sub(
+        r'^[\-\–\—]\s+(?=[А-ЯA-Z])',   # дефис/тире + пробел + заглавная буква
+        '',
+        text,
+        flags=re.MULTILINE
+    )
+    
+    # Паттерн 3: Убираем остальные маркеры списков
+    # Пример: "• Текст..." -> "Текст..."
+    text = re.sub(
+        r'^[•\*\-\–\—]\s+',            # маркер списка + пробел(ы)
+        '',
+        text,
+        flags=re.MULTILINE
+    )
+    
+    # Паттерн 4: Убираем множественные дефисы в начале (если есть)
+    # Пример: "-- Текст..." -> "Текст..."
+    text = re.sub(
+        r'^[\-\–\—]{2,}\s*',
+        '',
+        text,
+        flags=re.MULTILINE
+    )
+    
+    return text
 
 def process_document(md_file: Path, topics_data: Dict) -> Optional[Dict]:
     print(f"\n🔍 Обработка: {md_file.name}")
@@ -319,19 +519,47 @@ def process_document(md_file: Path, topics_data: Dict) -> Optional[Dict]:
         print(f"  ❌ Ошибка чтения: {e}")
         return None
 
-    metadata = extract_metadata_from_text(raw_text, md_file.name, topics_data)
-    cleaned_text = clean_text(raw_text)
-    main_text = extract_main_content(cleaned_text)
-    if not main_text: main_text = cleaned_text
+    # Шаг 1: Убираем Markdown-разметку
+    preprocessed_text = strip_markdown_formatting(raw_text)
+    print(f"  ✓ Базовая разметка удалена")
     
+    # Шаг 2: Убираем маркеры списков
+    preprocessed_text = remove_list_markers(preprocessed_text)
+    print(f"  ✓ Маркеры списков удалены")
+    
+    # Шаг 3: Извлекаем метаданные
+    metadata = extract_metadata_from_text(preprocessed_text, md_file.name, topics_data)
+    
+    # Шаг 4: Очищаем текст
+    cleaned_text = clean_text(preprocessed_text)
+    
+    # Шаг 5: Вырезаем основной контент
+    main_text = extract_main_content(cleaned_text)
+    if not main_text: 
+        main_text = cleaned_text
+    
+    # Шаг 6: Нормализуем заголовки секций
+    main_text = normalize_section_headers(main_text)
+    print(f"  ✓ Заголовки секций нормализованы")
+    
+    # Шаг 7: Разбиваем на секции
     sections = extract_sections(main_text)
+    
+    # Шаг 8: Сохраняем очищенный текст
     clean_filename = get_clean_filename(metadata, md_file.name)
     clean_file = CLEANED_DIR / clean_filename
     with open(clean_file, 'w', encoding='utf-8') as f:
         f.write(main_text)
     print(f"  📄 Очищенный текст: {clean_filename}")
     
-    return {"document": {"filename": md_file.name, "metadata": metadata, "sections": sections}}
+    return {
+        "document": {
+            "filename": md_file.name,
+            "metadata": metadata,
+            "sections": sections
+        }
+    }
+
 
 def process_all_documents(input_dir: Path = INPUT_DIR, cleaned_dir: Path = CLEANED_DIR, output_dir: Path = OUTPUT_DIR):
     cleaned_dir.mkdir(parents=True, exist_ok=True)
