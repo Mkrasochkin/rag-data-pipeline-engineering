@@ -22,7 +22,7 @@ def get_supabase_client() -> Client:
     load_dotenv(override=True)
 
     supabase_url = os.getenv("SUPABASE_URL")
-    supabase_key = os.getenv("SUPABASE_PUBLIC_KEY_LONG")
+    supabase_key = os.getenv("SUPABASE_PRIVATE_KEY_LONG")
 
     if not supabase_url or not supabase_key:
         raise ValueError(
@@ -216,11 +216,8 @@ class SupabaseMetadataWriter:
             List[Dict]: результаты обработки всех файлов
         """
 
-        # json_files = list(self.json_dir.glob("*.json"))
-        json_files = [
-            self.json_dir / "СП_59_13330_2020.json",
-            self.json_dir / "СП_48_13330_2019.json",
-        ]
+        json_files = list(self.json_dir.glob("*.json"))
+
 
         if not json_files:
             print("❌ Нет JSON файлов для обработки")

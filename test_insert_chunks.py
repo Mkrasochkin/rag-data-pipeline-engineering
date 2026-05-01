@@ -20,7 +20,7 @@ PROJECT_ROOT = pathlib.Path(__file__).parent
 load_dotenv(PROJECT_ROOT / ".env", override=True)
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_PUBLIC_KEY_LONG")
+SUPABASE_KEY = os.getenv("SUPABASE_PRIVATE_KEY_LONG")
 
 QDRANT_HOST = os.getenv("QDRANT_HOST")
 QDRANT_PORT = os.getenv("QDRANT_PORT")
@@ -63,7 +63,7 @@ def main() -> None:
         chunker = SPDocumentChunker(embedder=embedder)
         _md = PROJECT_ROOT / "output" / "cleaned"
         # path = _md / "СП_48_13330_2019.md"
-        sp = "СП_20_13330_2016"
+        sp = "СП_7_13130_2009"
         path = _md / f"{sp}.md"
         raw = path.read_text(encoding="utf-8")
         with_meta = chunker.add_metadata(
@@ -75,36 +75,36 @@ def main() -> None:
         preview_path = PROJECT_ROOT / f"{sp}_chunks_preview_10000.txt"
         write_chunks_preview(chunks=with_meta, output_path=preview_path)
 
-        # # Подключаемся к Supabase и заливаем чанки в таблицу chunks
-        # supabase_helper = SupabaseHelper(supabase_url=SUPABASE_URL, supabase_key=SUPABASE_KEY)
-        # # Проверяем соединение с Supabase
-        # if not supabase_helper.check_connection():
-        #     print("Не удалось подключиться к Supabase")
-        #     return
-        # supabase_client = supabase_helper.get_supabase_client()
+        # Подключаемся к Supabase и заливаем чанки в таблицу chunks
+        supabase_helper = SupabaseHelper(supabase_url=SUPABASE_URL, supabase_key=SUPABASE_KEY)
+        # Проверяем соединение с Supabase
+        if not supabase_helper.check_connection():
+            print("Не удалось подключиться к Supabase")
+            return
+        supabase_client = supabase_helper.get_supabase_client()
 
-        # # Вставляем чанки в таблицу chunks
-        # chunks_upsert = SupabaseChunksUpserter(supabase_client=supabase_client)
-        # sub_rows = chunks_upsert.insert_chunks(chunks=with_meta)
-        # qdrant_points = embed_vector_rows_to_qdrant_points(embedder, sub_rows)
-        # print(f"Готово точек для Qdrant: {len(qdrant_points)}")
+        # Вставляем чанки в таблицу chunks
+        chunks_upsert = SupabaseChunksUpserter(supabase_client=supabase_client)
+        sub_rows = chunks_upsert.insert_chunks(chunks=with_meta)
+        qdrant_points = embed_vector_rows_to_qdrant_points(embedder, sub_rows)
+        print(f"Готово точек для Qdrant: {len(qdrant_points)}")
 
-        # # Подключаемся к Qdrant
-        # qdrant_helper = QdrantHelper(qdrant_host=QDRANT_HOST, qdrant_port=QDRANT_PORT, qdrant_api_key=QDRANT_API_KEY)
-        # if not qdrant_helper.check_connection():
-        #     print("Не удалось подключиться к Qdrant")
-        #     return
+        # Подключаемся к Qdrant
+        qdrant_helper = QdrantHelper(qdrant_host=QDRANT_HOST, qdrant_port=QDRANT_PORT, qdrant_api_key=QDRANT_API_KEY)
+        if not qdrant_helper.check_connection():
+            print("Не удалось подключиться к Qdrant")
+            return
 
-        # qdrant_client = qdrant_helper.get_qdrant_client()
+        qdrant_client = qdrant_helper.get_qdrant_client()
 
-        # # Вставляем чанки в Qdrant
-        # qdrant_insertor = QdrantInsertor(qdrant_client=qdrant_client)
-        # qdrant_insertor.create_collection(
-        #     collection_name="test_chunks",
-        #     vector_size=embedder.get_embedding_dimension(),
-        # )
-        # qdrant_insertor.insert_chunks(chunks=qdrant_points, collection_name="test_chunks")
-        # print("Чанки вставлены в Qdrant")
+        # Вставляем чанки в Qdrant
+        qdrant_insertor = QdrantInsertor(qdrant_client=qdrant_client)
+        qdrant_insertor.create_collection(
+            collection_name="sp_chunks",
+            vector_size=embedder.get_embedding_dimension(),
+        )
+        qdrant_insertor.insert_chunks(chunks=qdrant_points, collection_name="sp_chunks")
+        print("Чанки вставлены в Qdrant")
 
 
     except Exception as error:
