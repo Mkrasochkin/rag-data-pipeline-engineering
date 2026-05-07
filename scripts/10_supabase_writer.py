@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 from supbase_helper import SupabaseHelper
 
 PROJECT_ROOT = Path(__file__).parent.parent
+load_dotenv(PROJECT_ROOT / ".env")
 OUTPUT_DIR = PROJECT_ROOT / "output"
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_PRIVATE_KEY_LONG")
@@ -26,6 +27,11 @@ class SupabaseMetadataWriter:
     """
 
     def __init__(self):
+        if not SUPABASE_URL or not SUPABASE_KEY:
+            raise RuntimeError(
+                "Задайте SUPABASE_URL и SUPABASE_PRIVATE_KEY_LONG "
+                f"(файл {PROJECT_ROOT / '.env'} или переменные окружения)."
+            )
         self.supabase = SupabaseHelper(supabase_url=SUPABASE_URL, supabase_key=SUPABASE_KEY).get_supabase_client()
         self.json_dir = OUTPUT_DIR / "json"
 
