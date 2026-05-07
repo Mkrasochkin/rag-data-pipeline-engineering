@@ -11,25 +11,12 @@ from typing import Dict, List, Optional
 from datetime import date
 
 from dotenv import load_dotenv
-from supabase import Client, create_client
+from supbase_helper import SupabaseHelper
 
 PROJECT_ROOT = Path(__file__).parent.parent
 OUTPUT_DIR = PROJECT_ROOT / "output"
-
-
-def get_supabase_client() -> Client:
-    """Создает Supabase client из переменных окружения."""
-    load_dotenv(override=True)
-
-    supabase_url = os.getenv("SUPABASE_URL")
-    supabase_key = os.getenv("SUPABASE_PRIVATE_KEY_LONG")
-
-    if not supabase_url or not supabase_key:
-        raise ValueError(
-            "Не заданы SUPABASE_URL и ключ Supabase (SUPABASE_PRIVATE_KEY/SUPABASE_PUBLIC_KEY)"
-        )
-
-    return create_client(supabase_url, supabase_key)
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_PRIVATE_KEY_LONG")
 
 
 class SupabaseMetadataWriter:
@@ -39,7 +26,7 @@ class SupabaseMetadataWriter:
     """
 
     def __init__(self):
-        self.supabase = get_supabase_client()
+        self.supabase = SupabaseHelper(supabase_url=SUPABASE_URL, supabase_key=SUPABASE_KEY).get_supabase_client()
         self.json_dir = OUTPUT_DIR / "json"
 
     def upsert_document(self, doc_data: Dict) -> Dict:

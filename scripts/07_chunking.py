@@ -27,6 +27,13 @@ _CLAUSE = re.compile(
 )
 
 # Только первая строка блока: «5.3.6 …» или «12 Сведения…» — для поля clause_ref в metadata
+# ^ - начало строки
+# \s* - ноль или более пробелов
+# ?: - группировка без сохранения в результате
+# d{1,3} - одна, две или три цифры
+# \. - точка
+# + - одна или более точек
+# s+ - одна или более пробелов
 _FIRST_LINE_NUM = re.compile(
     r"^\s*((?:\d{1,3}(?:\.\d{1,3})+)|(?:\d{1,2}))\s*\.?\s+",
 )
@@ -213,6 +220,7 @@ class SPDocumentChunker:
                         blocks.append(table_part)
 
         return self.merge_minimal_blocks(blocks)
+        # return blocks
 
     def merge_minimal_blocks(self, blocks: list[str]) -> list[str]:
         """

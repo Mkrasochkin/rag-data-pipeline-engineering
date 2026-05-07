@@ -22,7 +22,7 @@ def embed_vector_rows_to_qdrant_points(
             {
                 "id": row["point_id"],
                 "vector": vector,
-                "payload": row.get("payload") or {},
+                "payload": row.get("payload"),
             }
         )
     return qdrant_points
@@ -49,11 +49,57 @@ class QdrantInsertor:
             print(f"Коллекция {collection_name} не существует")
             return
 
+        if not chunks:
+            print("Нет чанков для вставки")
+            return
+
+        first_chunk = chunks[0]
+        doc_id = first_chunk.get("payload").get("doc_id")
+
+        if not doc_id:
+            raise ValueError("В chunks.metadata не найден doc_id")
+
+        self.delete_chunks_by_doc_id(
+            collection_name=collection_name,
+            doc_id=doc_id,
+        )
+
         self.qdrant_client.upsert(
             collection_name=collection_name,
             points=chunks,
         )
         print(f"Вставлено {len(chunks)} чанков в коллекцию {collection_name}")
+
+    def delete_chunks_by_doc_id(
+        self,
+        *,
+        collection_name: str,
+        doc_id: str,
+    ) -> None:
+        """
+        Удаляет из коллекции все векторы документа по payload.doc_id.
+
+        Args:
+            collection_name: название коллекции
+            doc_id: id документа
+        """
+        self.qdrant_client.delete(
+            collection_name=collection_name,
+            points_selector=models.FilterSelector(
+                filter=models.Filter(
+                    must=[
+                        models.FieldCondition(
+                            key="doc_id",
+                            match=models.MatchValue(value=doc_id),
+                        )
+                    ]
+                )
+            ),
+        )
+        print(
+            f"Удалены векторы документа {doc_id} "
+            f"из коллекции {collection_name}"
+        )
 
     def create_collection(
         self,
