@@ -8,11 +8,12 @@ class QdrantHelper:
         qdrant_host: str,
         qdrant_port: str,
         qdrant_api_key: str = "",
+        timeout: int = 180,
     ):
         self.client = QdrantClient(
             url=f"http://{qdrant_host}:{qdrant_port}",
             api_key=qdrant_api_key,
-            timeout=10,
+            timeout=timeout,
         )
 
     def get_qdrant_client(self) -> QdrantClient:
