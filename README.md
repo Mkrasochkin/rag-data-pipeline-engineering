@@ -1,48 +1,38 @@
 ```text
 Team_DE/
-├── .env                              # Секреты (пароли, ключи)
-├── .gitignore                        # Игнорируем .env и данные
-├── docker-compose.yml                # Запуск Qdrant
-├── requirements.txt                  # Python зависимости
+├── .env                                # Секреты (пароли, ключи)
+├── .gitignore                          # Игнорируем .env и данные
+├── docker-compose.yml                  # Запуск Qdrant
+├── requirements.txt                    # Python зависимости
+├── README.md                           # Инструкция
+├── run_full_pipeline.py                # Оркестратор полного пайплайна
 │
-├── sql/                              # SQL скрипты для Supabase
-│   └── 01_create_tables.sql          # DDL файл (full_DDL_with_comments.sql)
+├── sql/                                # SQL скрипты для Supabase
+│   └── 01_create_tables.sql            # DDL файл (создание схемы, таблиц, триггеры, функции, политики)
 │
-├── scripts/                          # DE скрипты
-│   ├── 01_init_qdrant.py             # Создание коллекции в Qdrant
-│   ├── 02_pdf_to_markdown.py         # Конвертация PDF → Markdown
-│   ├── 03_clean_markdown.py          # Очистка документа от мусора
-│   ├── 04_extract_metadata.py        # Извлечение метаданных для Supabase documents
-│   ├── 05_section_extractor.py       # Разбивка на секции по заголовкам #, ##, ###
-│   ├── 06_create_json_structure.py   # Создание JSON-файлов для всех документов
-│   ├── 07_chunking.py                # Чанкование секций
-│   ├── 08_embedding.py               # Эмбеддинг чанков
-│   ├── 09_upload_to_qdrant.py        # Загрузка векторов в Qdrant
-│   ├── 10_supabase_writer.py         # SupabaseMetadataWriter (вставка в documents и document_sections)
-│   ├── 11_check_status.py            # Проверка статуса
-│   └── full_pipeline.py              # Оркестратор полного пайплайна
+├── scripts/                            # DE скрипты
+│   ├── 01_pdf_to_markdown.py           # Конвертация PDF → Markdown
+│   ├── 02_clean_markdown.py            # Очистка документа от мусора, извлечение метаданных для Supabase documents и document_sections в json, разбивка на секции по пунктам, создание JSON-файлов для всех документов
+│   ├── 03_chunking.py                  # Чанкование секций, извлечение метаданных для Supabase chunks
+│   ├── 04_embedding.py                 # Эмбеддинг чанков
+│   ├── 05_upload_to_qdrant.py          # Загрузка метаданных в Supabase и векторов в Qdrant
+│   ├── 06_supabase_writer.py           # Вставка метаданных из json в documents и document_sections
+│   ├── 07_insert_to_qdrant.py          # Вставка векторов в Qdrant
+│   ├── qdrant_helper                   # Подключение к векторной БД
+│   └── supbase_helper                  # Подключение к Supabase
 │
-├── core/                             # Общие модули и утилиты
-│   ├── __init__.py
-│   ├── config.py                     # Конфигурация (загрузка из .env)
-│   ├── supabase_client.py            # Клиент для Supabase
-│   ├── qdrant_client.py              # Клиент для Qdrant
-│   └── utils.py                      # Вспомогательные функции
-│
-├── data/                             # Входные данные
-│   └── pdfs/                         # Папка с PDF документами
-│       ├── SP_113_2023.pdf
+├── data/                               # Входные данные
+│   └── pdfs/                           # Папка с PDF документами
+│       ├── SP 1.13130.2020.pdf
 │       └── ...
 │
-├── output/                           # Промежуточные выходные данные
-│   ├── markdown/                     # Конвертированные Markdown файлы
-│   │   └── СП_113.13330.2023_Стоянки_автомобилей.md
-│   ├── cleaned/                      # Очищенные Markdown файлы
-│   │   └── СП_113.13330.2023_Стоянки_автомобилей_clean.md
-│   └── json/                         # JSON структуры документов
-│       └── СП_113.13330.2023_Стоянки_автомобилей.json
+├── output/                             # Промежуточные выходные данные
+│   ├── markdown/                       # Конвертированные Markdown файлы
+│   │   └── SP 1.13130.2020.md
+│   ├── cleaned/                        # Очищенные Markdown файлы
+│   │   └── СП_1.13130.2020.md
+│   └── json/                           # JSON структуры метаданных
+│       └── СП_1.13130.2020.json
 │
-├── qdrant_data/                      # Данные Qdrant (авто)
-│
-└── README_DE.md                      # Инструкция
+└── qdrant_data/                        # Данные Qdrant (авто)
 ```

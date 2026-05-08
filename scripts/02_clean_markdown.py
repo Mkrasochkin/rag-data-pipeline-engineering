@@ -17,6 +17,7 @@ INPUT_DIR = PROJECT_ROOT / "output" / "markdown"
 CLEANED_DIR = PROJECT_ROOT / "output" / "cleaned"
 OUTPUT_DIR = PROJECT_ROOT / "output" / "json"
 TOPICS_FILE = PROJECT_ROOT / "sp_topics.json"
+MANUAL_FIXES_FILE = PROJECT_ROOT / "manual_fixes.json"
 
 
 def _strip_json_recursive(obj):
@@ -29,6 +30,7 @@ def _strip_json_recursive(obj):
         return obj.strip()
     return obj
 
+
 def load_topics() -> Dict:
     """Загружает классификатор тематик СП из sp_topics.json"""
     if not TOPICS_FILE.exists():
@@ -37,21 +39,35 @@ def load_topics() -> Dict:
     try:
         with open(TOPICS_FILE, 'r', encoding='utf-8') as f:
             raw_data = json.load(f)
-            return _strip_json_recursive(raw_data)  # Автоочистка от пробелов
+            return _strip_json_recursive(raw_data)
     except Exception as e:
         print(f"⚠️  Ошибка загрузки {TOPICS_FILE}: {e}")
         return {}
+
+
+def load_manual_fixes() -> Dict:
+    """Загружает файл с ручными правками потерянных данных."""
+    if not MANUAL_FIXES_FILE.exists():
+        print(f"ℹ️  Файл {MANUAL_FIXES_FILE} не найден, ручные правки не будут применены.")
+        return {}
+    try:
+        with open(MANUAL_FIXES_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"⚠️  Ошибка загрузки {MANUAL_FIXES_FILE}: {e}")
+        return {}
+
 
 def get_topic_for_sp(sp_number: str, topics_data: Dict) -> str:
     """Определяет тематику СП по его номеру."""
     if not topics_data or not sp_number:
         return ""
-    
+
     # 1. Точное соответствие в specific_topics (высший приоритет)
     specific = topics_data.get("specific_topics", {})
     if sp_number in specific:
         return specific[sp_number]
-        
+
     # 2. Определяем по серии
     series_match = re.search(r'\.(\d{5})', sp_number)
     if series_match:
@@ -62,7 +78,7 @@ def get_topic_for_sp(sp_number: str, topics_data: Dict) -> str:
         # Явные паттерны для пожарных серий
         if series in ("13130", "13150"):
             return "Пожарная безопасность"
-            
+
     # 3. Извлекаем первую часть номера и определяем по диапазонам
     match = re.match(r'^(\d+)', sp_number)
     if match:
@@ -75,9 +91,46 @@ def get_topic_for_sp(sp_number: str, topics_data: Dict) -> str:
                     return topic
             except ValueError:
                 continue
-                
+
     # 4. Тематика не определена
     return topics_data.get("default_topic", "Строительство")
+
+
+def stitch_detached_headers(text: str) -> str:
+    """
+    Склеивает 'оторванные' заголовки с их содержимым.
+    Пример:
+      3.11
+      инвалид: Лицо, которое...
+    ->
+      3.11 инвалид: Лицо, которое...
+    """
+    lines = text.split('\n')
+    new_lines = []
+    skip_next = False
+
+    for i, line in enumerate(lines):
+        if skip_next:
+            skip_next = False
+            continue
+
+        stripped = line.strip()
+
+        # Ищем строку, которая выглядит как "голый" номер пункта (3.11, 3.20 и т.д.)
+        if re.match(r'^\s*\d+(\.\d+)+\s*$', stripped):
+            if i + 1 < len(lines):
+                next_line = lines[i + 1].strip()
+                # Проверяем, что следующая строка не пустая и не похожа на новый заголовок
+                if next_line and not re.match(r'^\s*\d+(\.\d+)*\s+[А-ЯA-Z]', next_line):
+                    # Склеиваем: "3.11" + " " + "инвалид: Лицо..."
+                    new_lines.append(stripped + " " + next_line)
+                    skip_next = True
+                    continue
+
+        new_lines.append(line)
+
+    return '\n'.join(new_lines)
+
 
 def strip_markdown_formatting(text: str) -> str:
     """
@@ -85,15 +138,21 @@ def strip_markdown_formatting(text: str) -> str:
     последующим текстовым regex-парсерам.
     """
     # Удаляем заголовки Markdown (#, ##, ### и т.д.), оставляя текст заголовка
-    # r'^#{1,6}\s+' -> заменить на пустую строку. 
-    # flags=re.MULTILINE важен, чтобы ^ работал для каждой строки
     text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
-    
-    # Можно добавить удаление других элементов разметки, если нужно:
-    # text = re.sub(r'\*\*(.*?)\*\*', r'\1', text) # жирный
-    # text = re.sub(r'\*(.*?)\*', r'\1', text)     # курсив
-    
     return text
+
+
+def fix_hyphenation(text: str) -> str:
+    """
+    Исправляет переносы слов с дефисом в конце строки.
+    Примеры:
+    - "норматив-\nнога" -> "нормативного"
+    - "характери-\nстик" -> "характеристик"
+    - "оповеща-\nтелей" -> "оповещателей"
+    """
+    text = re.sub(r'([а-яёa-z])-\s*\n\s*([а-яёa-z])', r'\1\2', text, flags=re.IGNORECASE)
+    return text
+
 
 def fix_word_spacing(text: str) -> str:
     """
@@ -101,19 +160,19 @@ def fix_word_spacing(text: str) -> str:
     Пример: "н а з в а н и е" -> "название"
     """
     pattern = re.compile(r'\b([а-яё])\s+([а-яё])\s+([а-яё])', re.IGNORECASE)
-    
+
     prev_text = ""
     current_text = text
     iterations = 0
-    
+
     while prev_text != current_text and iterations < 10:
         prev_text = current_text
         current_text = pattern.sub(r'\1\2\3', current_text)
         iterations += 1
-    
+
     if iterations > 1:
         print(f"    ✓ Исправлены пробелы в словах (проходов: {iterations})")
-    
+
     return current_text
 
 
@@ -123,14 +182,14 @@ def remove_table_of_contents(text: str) -> Tuple[str, bool]:
     Поддерживает обычное и табличное содержание.
     """
     lines = text.split('\n')
-    
+
     # Маркеры начала содержания
     toc_start_markers = [
         r'^\s*СОДЕРЖАНИЕ\s*$',
         r'^\s*Содержание\s*$',
         r'^\s*Оглавление\s*$',
     ]
-    
+
     # Маркеры строк, похожих на содержание
     toc_content_markers = [
         r'^\s*\d+(\.\d+)*\s+[А-ЯЁ].+\.{3,}',       # "1.1 Название....... 5"
@@ -138,7 +197,7 @@ def remove_table_of_contents(text: str) -> Tuple[str, bool]:
         r'^\s*\d+(\.\d+)*\s+[А-ЯЁ]',                 # "1.1 Название"
         r'^\|\s*\d+',                                 # Табличная строка (markdown)
     ]
-    
+
     # Маркеры конца содержания
     toc_end_markers = [
         r'^\s*1\.\s+Область\s+применения',
@@ -147,7 +206,7 @@ def remove_table_of_contents(text: str) -> Tuple[str, bool]:
         r'^\s*Введение\s*$',
         r'^\s*ПРЕДИСЛОВИЕ\s*$',
     ]
-    
+
     # Ищем начало содержания
     toc_start = None
     for i, line in enumerate(lines[:100]):
@@ -157,32 +216,32 @@ def remove_table_of_contents(text: str) -> Tuple[str, bool]:
                 break
         if toc_start is not None:
             break
-    
+
     if toc_start is None:
         return text, False
-    
+
     # Ищем конец содержания
     toc_end = None
     toc_content_count = 0
-    
+
     for i in range(toc_start + 1, min(toc_start + 200, len(lines))):
         line = lines[i].strip()
-        
+
         for marker in toc_end_markers:
             if re.match(marker, line, re.IGNORECASE):
                 toc_end = i
                 break
         if toc_end is not None:
             break
-        
+
         for marker in toc_content_markers:
             if re.match(marker, line, re.IGNORECASE):
                 toc_content_count += 1
                 break
-        
+
         if i > toc_start + 3 and toc_content_count == 0:
             return text, False
-    
+
     if toc_end is None and toc_content_count > 3:
         for i in range(toc_start + 3, min(toc_start + 200, len(lines))):
             if not lines[i].strip():
@@ -192,13 +251,14 @@ def remove_table_of_contents(text: str) -> Tuple[str, bool]:
                         break
                 if toc_end:
                     break
-    
+
     if toc_end:
         cleaned_lines = lines[:toc_start] + lines[toc_end:]
         print(f"    ✓ Удалено содержание (строки {toc_start}-{toc_end})")
         return '\n'.join(cleaned_lines), True
-    
+
     return text, False
+
 
 def extract_metadata_from_text(text: str, filename: str, topics_data: Dict = None) -> Dict:
     """Извлекает метаданные из текста документа."""
@@ -214,7 +274,7 @@ def extract_metadata_from_text(text: str, filename: str, topics_data: Dict = Non
         "topic": ""
     }
     search_text = text[:20000]
-    
+
     # 1. Обозначение СП и год
     sp_patterns = [
         r'СП\s+(\d{1,3}\.\d{5}\.\d{4})',
@@ -231,13 +291,13 @@ def extract_metadata_from_text(text: str, filename: str, topics_data: Dict = Non
             metadata["year"] = int(designation.split('.')[-1])
             print(f"    ✓ Найден номер СП: {designation}")
             break
-            
+
     if not metadata["designation"]:
         metadata_from_filename = parse_filename_metadata(filename)
         metadata.update(metadata_from_filename)
         if metadata.get("designation"):
             print(f"    ✓ Номер из имени файла: {metadata['designation']}")
-            
+
     if metadata["designation"]:
         sp_core = re.match(r'^(\d+\.\d+)', metadata["designation"])
         if sp_core:
@@ -249,7 +309,7 @@ def extract_metadata_from_text(text: str, filename: str, topics_data: Dict = Non
                 print(f"    ⚠️ Тематика не определена для {sp_core.group(1)}")
         else:
             print(f"    ❌ Обозначение СП не найдено!")
-            
+
     # 2. Полное название
     title_patterns = [
         r'СВОД\s+ПРАВИЛ\s*\n+\s*([А-ЯЁA-Z][А-ЯЁA-Z\s\-]+?)(?:\n|$)',
@@ -267,10 +327,10 @@ def extract_metadata_from_text(text: str, filename: str, topics_data: Dict = Non
                 metadata["official_title"] = title
                 print(f"    ✓ Найдено название: {title[:50]}...")
                 break
-                
+
     if not metadata["official_title"]:
         metadata["official_title"] = parse_filename_metadata(filename).get("official_title", "")
-        
+
     # 3. Дата введения
     date_patterns = [
         r'Дата\s+введения\s+(\d{4}\s*-\s*\d{2}\s*-\s*\d{2})',
@@ -289,13 +349,14 @@ def extract_metadata_from_text(text: str, filename: str, topics_data: Dict = Non
                     metadata["valid_from"] = f"{parts[2]}-{parts[1]}-{parts[0]}"
             print(f"    ✓ Найдена дата введения: {metadata['valid_from']}")
             break
-            
+
     # 4. Обязательность (Для СП все обязательные. Переделать для других документов.)
     if re.search(r'обязательный|обязательного|носит\s+обязательный', search_text, re.IGNORECASE):
         metadata["is_mandatory"] = True
         print(f"    ✓ Документ имеет обязательный характер")
-        
+
     return metadata
+
 
 def parse_filename_metadata(filename: str) -> Dict:
     """Извлечение метаданных из имени файла."""
@@ -328,18 +389,19 @@ def parse_filename_metadata(filename: str) -> Dict:
                 }
     return {"type": "СП", "designation": "", "year": 0, "official_title": name.replace('_', ' ')}
 
+
 def clean_text(text: str) -> str:
     """Базовая очистка текста + исправление пробелов + удаление содержания."""
     # 1. Исправляем пробелы в словах
     text = fix_word_spacing(text)
-    
+
     # 2. Склеиваем слова, разорванные переносом
     text = re.sub(r'(\w+)-\n(\w+)', r'\1\2', text)
     text = re.sub(r'(\w+)-\n\s+(\w+)', r'\1\2', text)
-    
+
     # 3. Удаляем содержание
     text, _ = remove_table_of_contents(text)
-    
+
     # 4. Построчная очистка (оригинальная)
     lines = text.split('\n')
     cleaned_lines = []
@@ -361,6 +423,7 @@ def clean_text(text: str) -> str:
     text = re.sub(r'\n\s*\n\s*\n+', '\n', text)
     return text.strip()
 
+
 def extract_main_content(text: str) -> str:
     """Вырезает основной нормативный текст."""
     start_patterns = [r"^\s*1\.\s+Область\s+применения", r"^\s*1\s+Область\s+применения"]
@@ -375,7 +438,7 @@ def extract_main_content(text: str) -> str:
         if match: start_pos = match.start()
         else: return text
     text = text[start_pos:]
-    
+
     end_patterns = [r"^\s*Приложение\s+[А-ЯA-Z]", r"^\s*Библиография"]
     end_pos = None
     for pattern in end_patterns:
@@ -385,6 +448,7 @@ def extract_main_content(text: str) -> str:
             break
     if end_pos: text = text[:end_pos]
     return text.strip()
+
 
 def normalize_section_headers(text: str) -> str:
     """
@@ -399,7 +463,7 @@ def normalize_section_headers(text: str) -> str:
     Правило: убираем последнюю точку в номере пункта,
     если она не является частью нумерации (т.е. после неё пробел и заглавная буква)
     """
-    
+
     # Паттерн 1: Одноуровневый номер с точкой в начале строки
     # "1. Область" -> "1 Область"
     text = re.sub(
@@ -408,7 +472,7 @@ def normalize_section_headers(text: str) -> str:
         text,
         flags=re.MULTILINE
     )
-    
+
     # Паттерн 2: Многоуровневый номер с точкой на конце
     # "1.1. Текст" -> "1.1 Текст"
     # "4.2.1. Текст" -> "4.2.1 Текст"
@@ -419,7 +483,7 @@ def normalize_section_headers(text: str) -> str:
         text,
         flags=re.MULTILINE
     )
-    
+
     # Паттерн 3: Запасной вариант - любое количество цифр с точками и финальной точкой
     # "3.1. Высота здания" -> "3.1 Высота здания"
     text = re.sub(
@@ -428,44 +492,112 @@ def normalize_section_headers(text: str) -> str:
         text,
         flags=re.MULTILINE
     )
-    
+
     return text
 
+
 def extract_sections(text: str) -> List[Dict]:
-    """Разбивает текст на секции по заголовкам."""
+    """
+    Разбивает текст на секции по заголовкам с защитой от ложных срабатываний.
+    """
     sections = []
     lines = text.split('\n')
-    
+
     # Заголовки верхнего уровня: "3 Термины и определения"
     # Первое слово минимум 4 буквы (отсекаем "При", "Для", "На", "По", "В", "С" и т.п.)
     top_header = r'^\s*(\d+)\.?\s+([А-ЯA-Z][а-яёa-z]{3,}.+)$'
-    
+
     # Подпункты: "3.1", "3.2", "4.2.1" — минимум одна точка
     sub_header = r'^\s*(\d+(?:\.\d+)+)\.?\s+([А-ЯA-Z].+)$'
-    
+
+    # Паттерны для ложных срабатываний
+    # Строки типа "5 человек - в многоэтажных...", "8 мест и дополнительно...", "1 Прочерк в таблице..."
+    list_item_pattern = re.compile(
+        r'^\s*\d+\s+(?:человек|мест|м|мм|см|км|кг|г|°|%|Прочерк)\s*-?\s*[а-яёa-z]',
+        re.IGNORECASE
+    )
+
+    # Строки типа "м;", "м2;", "м/с;" и т.п. (продолжение таблиц)
+    table_continuation_pattern = re.compile(
+        r'^\s*\d+\s+(?:м|мм|см|км|кг|г|л|°|%|мест|человек)[\s;]*$',
+        re.IGNORECASE
+    )
+
     current_section = None
     section_lines = []
     hierarchy = []
-    
-    for line in lines:
+
+    for i, line in enumerate(lines):
         # Сначала пробуем подпункт, потом верхний уровень
         match = re.match(sub_header, line, re.IGNORECASE) or re.match(top_header, line, re.IGNORECASE)
-        
+
+        is_new_section = False
+
         if match:
+            section_code = match.group(1)
+            section_title = match.group(2).strip()
+
+            # --- БЛОК ПРОВЕРОК НА ЛОЖНЫЕ СРАБАТЫВАНИЯ ---
+
+            # Проверка 1: не является ли это пунктом перечисления или примечанием к таблице
+            if list_item_pattern.match(line):
+                is_new_section = False
+            # Проверка 2: не является ли это продолжением таблицы (просто число и единица измерения)
+            elif table_continuation_pattern.match(line):
+                is_new_section = False
+            else:
+                # Проверка 3: контекст таблицы (строки с | ├ └ │)
+                is_table_context = False
+                for j in range(max(0, i - 5), i):
+                    prev_line = lines[j].strip()
+                    if (prev_line.startswith('|') or 
+                        prev_line.startswith('│') or 
+                        prev_line.startswith('├') or 
+                        prev_line.startswith('└') or
+                        prev_line.startswith('┌') or
+                        prev_line.startswith('┐') or
+                        prev_line.startswith('┘') or
+                        prev_line.startswith('┤')):
+                        is_table_context = True
+                        break
+
+                if is_table_context:
+                    # Дополнительная проверка: если это заголовок следующей крупной секции
+                    # (например, "6 Требования..."), то это не часть таблицы
+                    if re.match(r'^\s*\d+\.?\s+[А-ЯA-Z][а-яёa-z]{3,}', line):
+                        is_new_section = True
+                    else:
+                        is_new_section = False
+                else:
+                    # Проверка 4: не является ли это "голым" номером без текста
+                    # (характерно для остатков таблиц)
+                    if re.match(r'^\s*\d+\s*$', line):
+                        is_new_section = False
+                    # Проверка 5: если "заголовок" идет сразу после двоеточия в предыдущей строке
+                    # (характерно для продолжения определений)
+                    elif i > 0 and re.search(r':\s*$', lines[i - 1].strip()):
+                        # Но пропускаем, если это действительно отдельный пункт
+                        if not re.match(r'^\s*\d+\.\s+[А-ЯA-Z]', line):
+                            is_new_section = False
+                        else:
+                            is_new_section = True
+                    else:
+                        is_new_section = True
+            # --- КОНЕЦ БЛОКА ПРОВЕРОК ---
+
+        if is_new_section:
             if current_section:
                 current_section["content"] = '\n'.join(section_lines).strip()
                 if current_section["content"]:
                     sections.append(current_section)
                 section_lines = []
-                
-            section_code = match.group(1)
-            section_title = match.group(2).strip()
+
             level = section_code.count('.') + 1
-            
+
             while hierarchy and hierarchy[-1]["level"] >= level:
                 hierarchy.pop()
             hierarchy.append({"level": level, "code": section_code, "title": section_title})
-            
+
             path_parts = [f"{h['code']} {h['title']}" for h in hierarchy]
             current_section = {
                 "section_code": section_code,
@@ -484,21 +616,22 @@ def extract_sections(text: str) -> List[Dict]:
                     "level": 0, "hierarchy_path": "Введение", "content": ""
                 }
                 section_lines.append(line)
-                
+
     if current_section:
         current_section["content"] = '\n'.join(section_lines).strip()
         if current_section["content"]:
             sections.append(current_section)
     return sections
 
+
 def get_clean_filename(metadata: Dict, original_filename: str) -> str:
     if metadata.get("designation"):
         return f"СП_{metadata['designation'].replace('.', '_')}.md"
     name = original_filename.replace('.md', '')
     name = re.sub(r'[<>:"/\\|?*]', '', name)
-    # Сначала обрабатываем имя, потом вставляем в строку
     clean_name = re.sub(r'\s+', '_', name)
     return f"{clean_name}_clean.md"
+
 
 def remove_list_markers(text: str) -> str:
     """
@@ -507,43 +640,38 @@ def remove_list_markers(text: str) -> str:
     
     Обрабатывает:
     - Одинарные дефисы: "- 1.1 Текст..." -> "1.1 Текст..."
-    - Длинные тире: "— 1.1 Текст..." -> "1.1 Текст..."  
+    - Длинные тире: "— 1.1 Текст..." -> "1.1 Текст..."
     - Маркеры списков: "• 1.1 Текст..." -> "1.1 Текст..."
     - Звёздочки: "* 1.1 Текст..." -> "1.1 Текст..."
-    
-    При этом сохраняет:
-    - Дефисы внутри слов: "санитарно-эпидемиологические"
-    - Тире как знаки препинания: "условий - обеспечение"
-    - Номера с дефисами: "12-01-2004"
     """
-    
+
     # Паттерн 1: Убираем одиночный дефис/тире в начале строки
     # Пример: "- 1.1 Текст..." -> "1.1 Текст..."
     text = re.sub(
-        r'^[\-\–\—]\s+(?=\d+\.?\d*)',  # дефис/тире + пробел + (цифры с точкой)
-        '',                              # заменяем на пустую строку
+        r'^[\-\–\—]\s+(?=\d+\.?\d*)',
+        '',
         text,
         flags=re.MULTILINE
     )
-    
+
     # Паттерн 2: Убираем маркер списка + заголовок секции
     # Пример: "- 4.2.1 Текст..." -> "4.2.1 Текст..."
     text = re.sub(
-        r'^[\-\–\—]\s+(?=[А-ЯA-Z])',   # дефис/тире + пробел + заглавная буква
+        r'^[\-\–\—]\s+(?=[А-ЯA-Z])',
         '',
         text,
         flags=re.MULTILINE
     )
-    
+
     # Паттерн 3: Убираем остальные маркеры списков
     # Пример: "• Текст..." -> "Текст..."
     text = re.sub(
-        r'^[•\*\-\–\—]\s+',            # маркер списка + пробел(ы)
+        r'^[•\*\-\–\—]\s+',
         '',
         text,
         flags=re.MULTILINE
     )
-    
+
     # Паттерн 4: Убираем множественные дефисы в начале (если есть)
     # Пример: "-- Текст..." -> "Текст..."
     text = re.sub(
@@ -552,8 +680,60 @@ def remove_list_markers(text: str) -> str:
         text,
         flags=re.MULTILINE
     )
-    
+
     return text
+
+
+def apply_manual_fixes(filename: str, sections: List[Dict]) -> List[Dict]:
+    """Применяет ручные исправления из manual_fixes.json."""
+    fixes_data = load_manual_fixes()
+    if not fixes_data or filename not in fixes_data:
+        return sections
+
+    file_fixes = fixes_data[filename]
+
+    # Добавляем потерянные секции
+    if "add_sections" in file_fixes:
+        added_count = 0
+        for new_section in file_fixes["add_sections"]:
+            # Проверяем, нет ли уже такой секции
+            existing_codes = {s.get("section_code") for s in sections}
+            if new_section.get("section_code") not in existing_codes:
+                sections.append(new_section)
+                added_count += 1
+        if added_count > 0:
+            print(f"    🔧 Добавлено {added_count} потерянных секций из manual_fixes.json")
+
+    # Исправляем существующие секции
+    if "fix_sections" in file_fixes:
+        fixed_count = 0
+        for fix in file_fixes["fix_sections"]:
+            for section in sections:
+                if section.get("section_code") == fix.get("section_code"):
+                    if "content" in fix:
+                        section["content"] = fix["content"]
+                    if "section_title" in fix:
+                        section["section_title"] = fix["section_title"]
+                    if "hierarchy_path" in fix:
+                        section["hierarchy_path"] = fix["hierarchy_path"]
+                    fixed_count += 1
+                    break
+        if fixed_count > 0:
+            print(f"    🔧 Исправлено {fixed_count} секций из manual_fixes.json")
+
+    # Сортируем секции по section_code
+    def sort_key(section):
+        code = section.get("section_code", "")
+        if not code:
+            return (0,)  # Введение в начало
+        try:
+            return tuple(int(x) for x in code.split('.'))
+        except ValueError:
+            return (9999,)
+
+    sections.sort(key=sort_key)
+    return sections
+
 
 def process_document(md_file: Path, topics_data: Dict) -> Optional[Dict]:
     print(f"\n🔍 Обработка: {md_file.name}")
@@ -567,39 +747,46 @@ def process_document(md_file: Path, topics_data: Dict) -> Optional[Dict]:
         print(f"  ❌ Ошибка чтения: {e}")
         return None
 
+    # Шаг 0: Склейка оторванных заголовков
+    raw_text = stitch_detached_headers(raw_text)
+    print(f"  ✓ Заголовки проверены и склеены при необходимости")
+
     # Шаг 1: Убираем Markdown-разметку
     preprocessed_text = strip_markdown_formatting(raw_text)
     print(f"  ✓ Базовая разметка удалена")
-    
+
     # Шаг 2: Убираем маркеры списков
     preprocessed_text = remove_list_markers(preprocessed_text)
     print(f"  ✓ Маркеры списков удалены")
-    
+
     # Шаг 3: Извлекаем метаданные
     metadata = extract_metadata_from_text(preprocessed_text, md_file.name, topics_data)
-    
+
     # Шаг 4: Очищаем текст
     cleaned_text = clean_text(preprocessed_text)
-    
+
     # Шаг 5: Вырезаем основной контент
     main_text = extract_main_content(cleaned_text)
-    if not main_text: 
+    if not main_text:
         main_text = cleaned_text
-    
+
     # Шаг 6: Нормализуем заголовки секций
     main_text = normalize_section_headers(main_text)
     print(f"  ✓ Заголовки секций нормализованы")
-    
+
     # Шаг 7: Разбиваем на секции
     sections = extract_sections(main_text)
-    
-    # Шаг 8: Сохраняем очищенный текст
+
+    # Шаг 8: Применяем ручные заплатки
+    sections = apply_manual_fixes(md_file.name, sections)
+
+    # Шаг 9: Сохраняем очищенный текст
     clean_filename = get_clean_filename(metadata, md_file.name)
     clean_file = CLEANED_DIR / clean_filename
     with open(clean_file, 'w', encoding='utf-8') as f:
         f.write(main_text)
     print(f"  📄 Очищенный текст: {clean_filename}")
-    
+
     return {
         "document": {
             "filename": md_file.name,
@@ -612,44 +799,53 @@ def process_document(md_file: Path, topics_data: Dict) -> Optional[Dict]:
 def process_all_documents(input_dir: Path = INPUT_DIR, cleaned_dir: Path = CLEANED_DIR, output_dir: Path = OUTPUT_DIR):
     cleaned_dir.mkdir(parents=True, exist_ok=True)
     output_dir.mkdir(parents=True, exist_ok=True)
-    
+
     if not input_dir.exists():
         print(f"❌ Входная папка '{input_dir}' не существует!")
         return
-        
+
     topics_data = load_topics()
-    if topics_data: print("📚 Классификатор тематик загружен")
-    
+    if topics_data:
+        print("📚 Классификатор тематик загружен")
+
     md_files = list(input_dir.glob("*.md"))
     if not md_files:
         print(f"❌ Файлы .md не найдены в '{input_dir}'")
         return
-        
+
     print(f"\n📁 Найдено файлов: {len(md_files)}")
     results = []
-    
+
     for md_file in md_files:
         doc_data = process_document(md_file, topics_data)
-        if not doc_data: continue
-        
+        if not doc_data:
+            continue
+
         metadata = doc_data["document"]["metadata"]
         sections = doc_data["document"]["sections"]
-        
+
         json_filename = f"СП_{metadata['designation'].replace('.', '_')}.json" if metadata.get("designation") else md_file.stem + ".json"
         with open(output_dir / json_filename, 'w', encoding='utf-8') as f:
             json.dump(doc_data, f, ensure_ascii=False, indent=2)
-            
+
         sections_count = len(sections)
         total_chars = sum(len(s["content"]) for s in sections)
-        
+
         print(f"📋 Метаданные: {metadata['type']} | {metadata['designation']} | {metadata['year']} | Тема: {metadata['topic']}")
         print(f"📊 Секций: {sections_count} | Символов: {total_chars:,} | 💾 {json_filename}")
-        
-        results.append({"file": md_file.name, "designation": metadata.get("designation", ""), "topic": metadata.get("topic", ""), "sections": sections_count, "chars": total_chars})
+
+        results.append({
+            "file": md_file.name,
+            "designation": metadata.get("designation", ""),
+            "topic": metadata.get("topic", ""),
+            "sections": sections_count,
+            "chars": total_chars
+        })
 
     print("\n" + "=" * 60)
     print(f"📊 ИТОГО: Обработано {len(results)} документов")
     print(f"📁 Результаты сохранены в: {cleaned_dir} и {output_dir}")
+
 
 if __name__ == "__main__":
     print("=" * 60)
