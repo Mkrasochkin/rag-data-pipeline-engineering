@@ -15,8 +15,6 @@ PROJECT_ROOT = Path(__file__).parent.parent
 INPUT_DIR = PROJECT_ROOT / "output" / "markdown"
 CLEANED_DIR = PROJECT_ROOT / "output" / "cleaned"
 OUTPUT_DIR = PROJECT_ROOT / "output" / "json"
-TOPICS_FILE = PROJECT_ROOT / "sp_topics.json"
-MANUAL_FIXES_FILE = PROJECT_ROOT / "manual_fixes.json"
 
 
 def _strip_json_recursive(obj):
@@ -28,71 +26,6 @@ def _strip_json_recursive(obj):
     elif isinstance(obj, str):
         return obj.strip()
     return obj
-
-
-def load_topics() -> Dict:
-    """Загружает классификатор тематик СП из sp_topics.json"""
-    if not TOPICS_FILE.exists():
-        print(f"Файл {TOPICS_FILE} не найден, тематики не будут определены")
-        return {}
-    try:
-        with open(TOPICS_FILE, 'r', encoding='utf-8') as f:
-            raw_data = json.load(f)
-            return _strip_json_recursive(raw_data)
-    except Exception as e:
-        print(f"Ошибка загрузки {TOPICS_FILE}: {e}")
-        return {}
-
-
-def load_manual_fixes() -> Dict:
-    """Загружает файл с ручными правками потерянных данных."""
-    if not MANUAL_FIXES_FILE.exists():
-        print(f"Файл {MANUAL_FIXES_FILE} не найден, ручные правки не будут применены.")
-        return {}
-    try:
-        with open(MANUAL_FIXES_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except Exception as e:
-        print(f"Ошибка загрузки {MANUAL_FIXES_FILE}: {e}")
-        return {}
-
-
-def get_topic_for_sp(sp_number: str, topics_data: Dict) -> str:
-    """Определяет тематику СП по его номеру."""
-    if not topics_data or not sp_number:
-        return ""
-
-    # 1. Точное соответствие в specific_topics (высший приоритет)
-    specific = topics_data.get("specific_topics", {})
-    if sp_number in specific:
-        return specific[sp_number]
-
-    # 2. Определяем по серии
-    series_match = re.search(r'\.(\d{5})', sp_number)
-    if series_match:
-        series = series_match.group(1)
-        topic_by_series = topics_data.get("topic_by_series", {})
-        if series in topic_by_series:
-            return topic_by_series[series]
-        # Явные паттерны для пожарных серий
-        if series in ("13130", "13150"):
-            return "Пожарная безопасность"
-
-    # 3. Извлекаем первую часть номера и определяем по диапазонам
-    match = re.match(r'^(\d+)', sp_number)
-    if match:
-        sp_num = int(match.group(1))
-        ranges = topics_data.get("sp_topics_by_range", {})
-        for range_str, topic in ranges.items():
-            try:
-                start, end = map(int, range_str.split('-'))
-                if start <= sp_num <= end:
-                    return topic
-            except ValueError:
-                continue
-
-    # 4. Тематика не определена
-    return topics_data.get("default_topic", "Строительство")
 
 
 def stitch_detached_headers(text: str) -> str:
@@ -259,10 +192,8 @@ def remove_table_of_contents(text: str) -> Tuple[str, bool]:
     return text, False
 
 
-def extract_metadata_from_text(text: str, filename: str, topics_data: Dict = None) -> Dict:
+def extract_metadata_from_text(text: str, filename: str) -> Dict:
     """Извлекает метаданные из текста документа."""
-    if topics_data is None:
-        topics_data = {}
     metadata = {
         "type": "СП",
         "designation": "",
@@ -296,18 +227,6 @@ def extract_metadata_from_text(text: str, filename: str, topics_data: Dict = Non
         metadata.update(metadata_from_filename)
         if metadata.get("designation"):
             print(f"Номер из имени файла: {metadata['designation']}")
-
-    if metadata["designation"]:
-        sp_core = re.match(r'^(\d+\.\d+)', metadata["designation"])
-        if sp_core:
-            topic = get_topic_for_sp(sp_core.group(1), topics_data)
-            metadata["topic"] = topic
-            if topic:
-                print(f"Определена тематика: {topic}")
-            else:
-                print(f"Тематика не определена для {sp_core.group(1)}")
-        else:
-            print(f"Обозначение СП не найдено!")
 
     # 2. Полное название
     title_patterns = [
@@ -452,13 +371,13 @@ def extract_main_content(text: str) -> str:
 def normalize_section_headers(text: str) -> str:
     """
     Нормализует заголовки разделов для корректного парсинга.
-    
+
     Проблемы, которые решает:
     1. '1. Область применения' -> '1 Область применения'
     2. '1.1. Текст' -> '1.1 Текст'
     3. '4.2.1. Текст' -> '4.2.1 Текст'
     4. '1.1.1. Текст' -> '1.1.1 Текст'
-    
+
     Правило: убираем последнюю точку в номере пункта,
     если она не является частью нумерации (т.е. после неё пробел и заглавная буква)
     """
@@ -636,7 +555,7 @@ def remove_list_markers(text: str) -> str:
     """
     Удаляет маркеры списков в начале строк, которые являются частью
     форматирования документа, а не значимым текстом.
-    
+
     Обрабатывает:
     - Одинарные дефисы: "- 1.1 Текст..." -> "1.1 Текст..."
     - Длинные тире: "— 1.1 Текст..." -> "1.1 Текст..."
@@ -683,58 +602,7 @@ def remove_list_markers(text: str) -> str:
     return text
 
 
-def apply_manual_fixes(filename: str, sections: List[Dict]) -> List[Dict]:
-    """Применяет ручные исправления из manual_fixes.json."""
-    fixes_data = load_manual_fixes()
-    if not fixes_data or filename not in fixes_data:
-        return sections
-
-    file_fixes = fixes_data[filename]
-
-    # Добавляем потерянные секции
-    if "add_sections" in file_fixes:
-        added_count = 0
-        for new_section in file_fixes["add_sections"]:
-            # Проверяем, нет ли уже такой секции
-            existing_codes = {s.get("section_code") for s in sections}
-            if new_section.get("section_code") not in existing_codes:
-                sections.append(new_section)
-                added_count += 1
-        if added_count > 0:
-            print(f"Добавлено {added_count} потерянных секций из manual_fixes.json")
-
-    # Исправляем существующие секции
-    if "fix_sections" in file_fixes:
-        fixed_count = 0
-        for fix in file_fixes["fix_sections"]:
-            for section in sections:
-                if section.get("section_code") == fix.get("section_code"):
-                    if "content" in fix:
-                        section["content"] = fix["content"]
-                    if "section_title" in fix:
-                        section["section_title"] = fix["section_title"]
-                    if "hierarchy_path" in fix:
-                        section["hierarchy_path"] = fix["hierarchy_path"]
-                    fixed_count += 1
-                    break
-        if fixed_count > 0:
-            print(f"Исправлено {fixed_count} секций из manual_fixes.json")
-
-    # Сортируем секции по section_code
-    def sort_key(section):
-        code = section.get("section_code", "")
-        if not code:
-            return (0,)  # Введение в начало
-        try:
-            return tuple(int(x) for x in code.split('.'))
-        except ValueError:
-            return (9999,)
-
-    sections.sort(key=sort_key)
-    return sections
-
-
-def process_document(md_file: Path, topics_data: Dict) -> Optional[Dict]:
+def process_document(md_file: Path) -> Optional[Dict]:
     print(f"Обработка: {md_file.name}")
     try:
         with open(md_file, 'r', encoding='utf-8') as f:
@@ -759,7 +627,7 @@ def process_document(md_file: Path, topics_data: Dict) -> Optional[Dict]:
     print(f"Маркеры списков удалены")
 
     # Шаг 3: Извлекаем метаданные
-    metadata = extract_metadata_from_text(preprocessed_text, md_file.name, topics_data)
+    metadata = extract_metadata_from_text(preprocessed_text, md_file.name)
 
     # Шаг 4: Очищаем текст
     cleaned_text = clean_text(preprocessed_text)
@@ -776,10 +644,7 @@ def process_document(md_file: Path, topics_data: Dict) -> Optional[Dict]:
     # Шаг 7: Разбиваем на секции
     sections = extract_sections(main_text)
 
-    # Шаг 8: Применяем ручные заплатки
-    sections = apply_manual_fixes(md_file.name, sections)
-
-    # Шаг 9: Сохраняем очищенный текст
+    # Шаг 8: Сохраняем очищенный текст
     clean_filename = get_clean_filename(metadata, md_file.name)
     clean_file = CLEANED_DIR / clean_filename
     with open(clean_file, 'w', encoding='utf-8') as f:
@@ -803,10 +668,6 @@ def process_all_documents(input_dir: Path = INPUT_DIR, cleaned_dir: Path = CLEAN
         print(f"Входная папка '{input_dir}' не существует!")
         return
 
-    topics_data = load_topics()
-    if topics_data:
-        print("Классификатор тематик загружен")
-
     md_files = list(input_dir.glob("*.md"))
     if not md_files:
         print(f"Файлы .md не найдены в '{input_dir}'")
@@ -816,7 +677,7 @@ def process_all_documents(input_dir: Path = INPUT_DIR, cleaned_dir: Path = CLEAN
     results = []
 
     for md_file in md_files:
-        doc_data = process_document(md_file, topics_data)
+        doc_data = process_document(md_file)
         if not doc_data:
             continue
 
