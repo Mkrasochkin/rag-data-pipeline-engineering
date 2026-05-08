@@ -83,7 +83,7 @@ class SupabaseMetadataWriter:
                 .eq("id", doc_id) \
                 .execute()
 
-            print(f"  📝 Обновлен: {doc_data['type']} {doc_data['designation']}")
+            print(f"Обновлен: {doc_data['type']} {doc_data['designation']}")
             return {"id": doc_id, "created": False}
 
         else:
@@ -111,7 +111,7 @@ class SupabaseMetadataWriter:
             result = self.supabase.table("documents").insert(insert_data).execute()
             doc_id = result.data[0]["id"]
 
-            print(f"  ✅ Создан: {doc_data['type']} {doc_data['designation']}")
+            print(f"Создан: {doc_data['type']} {doc_data['designation']}")
             return {"id": doc_id, "created": True}
 
     def upsert_sections(self, doc_id: str, sections: List[Dict]) -> int:
@@ -175,7 +175,7 @@ class SupabaseMetadataWriter:
             Dict с результатами обработки
         """
 
-        print(f"\n📄 Обработка: {json_path.name}")
+        print(f"Обработка: {json_path.name}")
 
         # Читаем JSON
         with open(json_path, 'r', encoding='utf-8') as f:
@@ -193,7 +193,7 @@ class SupabaseMetadataWriter:
         # UPSERT секций
         sections_count = self.upsert_sections(doc_result["id"], sections)
 
-        print(f"  📑 Секций: {sections_count}")
+        print(f"Секций: {sections_count}")
 
         return {
             "file": json_path.name,
@@ -214,10 +214,10 @@ class SupabaseMetadataWriter:
 
 
         if not json_files:
-            print("❌ Нет JSON файлов для обработки")
+            print("Нет JSON файлов для обработки")
             return []
 
-        print(f"\n🚀 Запись в Supabase ({len(json_files)} файлов)")
+        print(f"Запись в Supabase ({len(json_files)} файлов)")
         print("=" * 50)
 
         results = []
@@ -226,7 +226,7 @@ class SupabaseMetadataWriter:
                 result = self.process_json_file(json_path)
                 results.append(result)
             except Exception as e:
-                print(f"  ❌ Ошибка: {e}")
+                print(f"Ошибка: {e}")
                 results.append({
                     "file": json_path.name,
                     "error": str(e)
@@ -234,17 +234,17 @@ class SupabaseMetadataWriter:
 
         # Итоги
         print("\n" + "=" * 50)
-        print("📊 ИТОГИ:")
+        print("ИТОГИ:")
 
         created = sum(1 for r in results if r.get("created"))
         updated = sum(1 for r in results if r.get("created") is False)
         errors = sum(1 for r in results if "error" in r)
         total_sections = sum(r.get("sections_count", 0) for r in results)
 
-        print(f"  ✅ Создано документов: {created}")
-        print(f"  📝 Обновлено документов: {updated}")
-        print(f"  ❌ Ошибок: {errors}")
-        print(f"  📑 Всего секций: {total_sections}")
+        print(f"Создано документов: {created}")
+        print(f"Обновлено документов: {updated}")
+        print(f"Ошибок: {errors}")
+        print(f"Всего секций: {total_sections}")
 
         return results
 

@@ -11,11 +11,11 @@ Team_DE/
 │
 ├── scripts/                            # DE скрипты
 │   ├── 01_pdf_to_markdown.py           # Конвертация PDF → Markdown
-│   ├── 02_clean_markdown.py            # Очистка документа от мусора, извлечение метаданных для Supabase documents и document_sections в json, разбивка на секции по пунктам, создание JSON-файлов для всех документов
+│   ├── 02_clean_markdown.py            # Очистка документа от мусора, извлечение метаданных для Supabase
 │   ├── 03_supabase_writer.py           # Вставка метаданных из json в documents и document_sections
 │   ├── 04_chunking.py                  # Чанкование секций, извлечение метаданных для Supabase chunks
 │   ├── 05_embedding.py                 # Эмбеддинг чанков
-│   ├── 05_upsert_chunks_supb.py        # Загрузка метаданных в Supabase и векторов в Qdrant
+│   ├── 06_upsert_chunks_supb.py        # Загрузка метаданных в Supabase и векторов в Qdrant
 │   ├── 07_insert_to_qdrant.py          # Вставка векторов в Qdrant
 │   ├── qdrant_helper                   # Подключение к векторной БД
 │   └── supbase_helper                  # Подключение к Supabase
@@ -187,16 +187,12 @@ python run_full_pipeline.py
 
 **Что будет происходить по шагам (как задумано в скрипте):**
 
-1. `pdf_to_markdown.py`: Конвертирует все PDF из `data/pdfs/` в формат Markdown и сохранит результат в `output/markdown/`.
-2. `clean_markdown.py`: Очистит Markdown-файлы, извлечет метаданные, разобьет на секции и создаст JSON-файлы в `output/json/` и очищенные `.md` в `output/cleaned/`.
-3. `supabase_writer.py`: Считает JSON-файлы и запишет метаданные документов и их разделов в облачную БД Supabase (таблицы `documents` и `document_sections`).
-
-**Далее по основному коду `run_full_pipeline.py`:**
-
-- Считает очищенные `.md` файлы.
-- Выполнит "Chunking" (нарезку) и эмбеддинг текста прямо в памяти, используя классы `SPDocumentChunker` и `Embedder`.
-- Запишет чанки в таблицу `chunks` в Supabase.
-- Вставит векторные представления чанков в коллекцию `sp_chunks` в Qdrant.
+1. Переводит документы из PDF в Markdown. Логика описана в скрипте 01_pdf_to_markdown.py
+2. Очищает Markdown от мусора. Логика описана в скрипте 02_clean_markdown.py
+3. Добавляет документы в таблицу documents в Supabase и пункты секций в таблицу document_sections в Supabase. А также добавляет JSON в папку output/json/. Логика описана в скрипте 03_supabase_writer.py
+4. Разбивает документы на чанки с помощью класса SPDocumentChunker.
+5. Вставляет чанки в таблицу chunks в Supabase с помощью класса SupabaseChunksUpserter.
+6. Вставляет векторные представления чанков в коллекцию sp_chunks в Qdrant с помощью класса QdrantInsertor.
 
 ### 5.3. Валидация (как проверить, что все работает)
 

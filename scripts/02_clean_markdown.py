@@ -1,11 +1,10 @@
-#!/usr/bin/env python3
 """
-Скрипт 03_clean_markdown.py
+Скрипт 02_clean_markdown.py
 Полная обработка документов: очистка + разбивка на секции + JSON
 Вход: output/markdown/*.md
 Выход:
 - output/cleaned/СП_XX.XXX.XXXX.md (очищенный текст)
-- output/json/СП_XX.XXX.XXXX.json (для САШИ)
+- output/json/СП_XX.XXX.XXXX.json (метаданные)
 """
 import re
 import json
@@ -34,27 +33,27 @@ def _strip_json_recursive(obj):
 def load_topics() -> Dict:
     """Загружает классификатор тематик СП из sp_topics.json"""
     if not TOPICS_FILE.exists():
-        print(f"⚠️  Файл {TOPICS_FILE} не найден, тематики не будут определены")
+        print(f"Файл {TOPICS_FILE} не найден, тематики не будут определены")
         return {}
     try:
         with open(TOPICS_FILE, 'r', encoding='utf-8') as f:
             raw_data = json.load(f)
             return _strip_json_recursive(raw_data)
     except Exception as e:
-        print(f"⚠️  Ошибка загрузки {TOPICS_FILE}: {e}")
+        print(f"Ошибка загрузки {TOPICS_FILE}: {e}")
         return {}
 
 
 def load_manual_fixes() -> Dict:
     """Загружает файл с ручными правками потерянных данных."""
     if not MANUAL_FIXES_FILE.exists():
-        print(f"ℹ️  Файл {MANUAL_FIXES_FILE} не найден, ручные правки не будут применены.")
+        print(f"Файл {MANUAL_FIXES_FILE} не найден, ручные правки не будут применены.")
         return {}
     try:
         with open(MANUAL_FIXES_FILE, 'r', encoding='utf-8') as f:
             return json.load(f)
     except Exception as e:
-        print(f"⚠️  Ошибка загрузки {MANUAL_FIXES_FILE}: {e}")
+        print(f"Ошибка загрузки {MANUAL_FIXES_FILE}: {e}")
         return {}
 
 
@@ -171,7 +170,7 @@ def fix_word_spacing(text: str) -> str:
         iterations += 1
 
     if iterations > 1:
-        print(f"    ✓ Исправлены пробелы в словах (проходов: {iterations})")
+        print(f"Исправлены пробелы в словах (проходов: {iterations})")
 
     return current_text
 
@@ -254,7 +253,7 @@ def remove_table_of_contents(text: str) -> Tuple[str, bool]:
 
     if toc_end:
         cleaned_lines = lines[:toc_start] + lines[toc_end:]
-        print(f"    ✓ Удалено содержание (строки {toc_start}-{toc_end})")
+        print(f"Удалено содержание (строки {toc_start}-{toc_end})")
         return '\n'.join(cleaned_lines), True
 
     return text, False
@@ -289,14 +288,14 @@ def extract_metadata_from_text(text: str, filename: str, topics_data: Dict = Non
             designation = sp_match.group(1)
             metadata["designation"] = designation
             metadata["year"] = int(designation.split('.')[-1])
-            print(f"    ✓ Найден номер СП: {designation}")
+            print(f"Найден номер СП: {designation}")
             break
 
     if not metadata["designation"]:
         metadata_from_filename = parse_filename_metadata(filename)
         metadata.update(metadata_from_filename)
         if metadata.get("designation"):
-            print(f"    ✓ Номер из имени файла: {metadata['designation']}")
+            print(f"Номер из имени файла: {metadata['designation']}")
 
     if metadata["designation"]:
         sp_core = re.match(r'^(\d+\.\d+)', metadata["designation"])
@@ -304,11 +303,11 @@ def extract_metadata_from_text(text: str, filename: str, topics_data: Dict = Non
             topic = get_topic_for_sp(sp_core.group(1), topics_data)
             metadata["topic"] = topic
             if topic:
-                print(f"    ✓ Определена тематика: {topic}")
+                print(f"Определена тематика: {topic}")
             else:
-                print(f"    ⚠️ Тематика не определена для {sp_core.group(1)}")
+                print(f"Тематика не определена для {sp_core.group(1)}")
         else:
-            print(f"    ❌ Обозначение СП не найдено!")
+            print(f"Обозначение СП не найдено!")
 
     # 2. Полное название
     title_patterns = [
@@ -325,7 +324,7 @@ def extract_metadata_from_text(text: str, filename: str, topics_data: Dict = Non
             exclude_words = ['ПРЕДИСЛОВИЕ', 'ВВЕДЕНИЕ', 'СОДЕРЖАНИЕ', 'ОБЛАСТЬ', 'ИЗДАНИЕ', 'СВЕДЕНИЯ']
             if not any(word in title.upper() for word in exclude_words):
                 metadata["official_title"] = title
-                print(f"    ✓ Найдено название: {title[:50]}...")
+                print(f"Найдено название: {title[:50]}...")
                 break
 
     if not metadata["official_title"]:
@@ -347,13 +346,13 @@ def extract_metadata_from_text(text: str, filename: str, topics_data: Dict = Non
                 parts = date_str.split('.')
                 if len(parts) == 3:
                     metadata["valid_from"] = f"{parts[2]}-{parts[1]}-{parts[0]}"
-            print(f"    ✓ Найдена дата введения: {metadata['valid_from']}")
+            print(f"Найдена дата введения: {metadata['valid_from']}")
             break
 
     # 4. Обязательность (Для СП все обязательные. Переделать для других документов.)
     if re.search(r'обязательный|обязательного|носит\s+обязательный', search_text, re.IGNORECASE):
         metadata["is_mandatory"] = True
-        print(f"    ✓ Документ имеет обязательный характер")
+        print(f"Документ имеет обязательный характер")
 
     return metadata
 
@@ -702,7 +701,7 @@ def apply_manual_fixes(filename: str, sections: List[Dict]) -> List[Dict]:
                 sections.append(new_section)
                 added_count += 1
         if added_count > 0:
-            print(f"    🔧 Добавлено {added_count} потерянных секций из manual_fixes.json")
+            print(f"Добавлено {added_count} потерянных секций из manual_fixes.json")
 
     # Исправляем существующие секции
     if "fix_sections" in file_fixes:
@@ -719,7 +718,7 @@ def apply_manual_fixes(filename: str, sections: List[Dict]) -> List[Dict]:
                     fixed_count += 1
                     break
         if fixed_count > 0:
-            print(f"    🔧 Исправлено {fixed_count} секций из manual_fixes.json")
+            print(f"Исправлено {fixed_count} секций из manual_fixes.json")
 
     # Сортируем секции по section_code
     def sort_key(section):
@@ -736,7 +735,7 @@ def apply_manual_fixes(filename: str, sections: List[Dict]) -> List[Dict]:
 
 
 def process_document(md_file: Path, topics_data: Dict) -> Optional[Dict]:
-    print(f"\n🔍 Обработка: {md_file.name}")
+    print(f"Обработка: {md_file.name}")
     try:
         with open(md_file, 'r', encoding='utf-8') as f:
             raw_text = f.read()
@@ -744,20 +743,20 @@ def process_document(md_file: Path, topics_data: Dict) -> Optional[Dict]:
         with open(md_file, 'r', encoding='cp1251') as f:
             raw_text = f.read()
     except Exception as e:
-        print(f"  ❌ Ошибка чтения: {e}")
+        print(f"Ошибка чтения: {e}")
         return None
 
     # Шаг 0: Склейка оторванных заголовков
     raw_text = stitch_detached_headers(raw_text)
-    print(f"  ✓ Заголовки проверены и склеены при необходимости")
+    print(f"Заголовки проверены и склеены при необходимости")
 
     # Шаг 1: Убираем Markdown-разметку
     preprocessed_text = strip_markdown_formatting(raw_text)
-    print(f"  ✓ Базовая разметка удалена")
+    print(f"Базовая разметка удалена")
 
     # Шаг 2: Убираем маркеры списков
     preprocessed_text = remove_list_markers(preprocessed_text)
-    print(f"  ✓ Маркеры списков удалены")
+    print(f"Маркеры списков удалены")
 
     # Шаг 3: Извлекаем метаданные
     metadata = extract_metadata_from_text(preprocessed_text, md_file.name, topics_data)
@@ -772,7 +771,7 @@ def process_document(md_file: Path, topics_data: Dict) -> Optional[Dict]:
 
     # Шаг 6: Нормализуем заголовки секций
     main_text = normalize_section_headers(main_text)
-    print(f"  ✓ Заголовки секций нормализованы")
+    print(f"Заголовки секций нормализованы")
 
     # Шаг 7: Разбиваем на секции
     sections = extract_sections(main_text)
@@ -785,7 +784,7 @@ def process_document(md_file: Path, topics_data: Dict) -> Optional[Dict]:
     clean_file = CLEANED_DIR / clean_filename
     with open(clean_file, 'w', encoding='utf-8') as f:
         f.write(main_text)
-    print(f"  📄 Очищенный текст: {clean_filename}")
+    print(f"Очищенный текст: {clean_filename}")
 
     return {
         "document": {
@@ -801,19 +800,19 @@ def process_all_documents(input_dir: Path = INPUT_DIR, cleaned_dir: Path = CLEAN
     output_dir.mkdir(parents=True, exist_ok=True)
 
     if not input_dir.exists():
-        print(f"❌ Входная папка '{input_dir}' не существует!")
+        print(f"Входная папка '{input_dir}' не существует!")
         return
 
     topics_data = load_topics()
     if topics_data:
-        print("📚 Классификатор тематик загружен")
+        print("Классификатор тематик загружен")
 
     md_files = list(input_dir.glob("*.md"))
     if not md_files:
-        print(f"❌ Файлы .md не найдены в '{input_dir}'")
+        print(f"Файлы .md не найдены в '{input_dir}'")
         return
 
-    print(f"\n📁 Найдено файлов: {len(md_files)}")
+    print(f"Найдено файлов: {len(md_files)}")
     results = []
 
     for md_file in md_files:
@@ -831,8 +830,8 @@ def process_all_documents(input_dir: Path = INPUT_DIR, cleaned_dir: Path = CLEAN
         sections_count = len(sections)
         total_chars = sum(len(s["content"]) for s in sections)
 
-        print(f"📋 Метаданные: {metadata['type']} | {metadata['designation']} | {metadata['year']} | Тема: {metadata['topic']}")
-        print(f"📊 Секций: {sections_count} | Символов: {total_chars:,} | 💾 {json_filename}")
+        print(f"Метаданные: {metadata['type']} | {metadata['designation']} | {metadata['year']} | Тема: {metadata['topic']}")
+        print(f"Секций: {sections_count} | Символов: {total_chars:,} | {json_filename}")
 
         results.append({
             "file": md_file.name,
@@ -843,13 +842,13 @@ def process_all_documents(input_dir: Path = INPUT_DIR, cleaned_dir: Path = CLEAN
         })
 
     print("\n" + "=" * 60)
-    print(f"📊 ИТОГО: Обработано {len(results)} документов")
-    print(f"📁 Результаты сохранены в: {cleaned_dir} и {output_dir}")
+    print(f"ИТОГО: Обработано {len(results)} документов")
+    print(f"Результаты сохранены в: {cleaned_dir} и {output_dir}")
 
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("📦 ПОЛНАЯ ОБРАБОТКА ДОКУМЕНТОВ")
+    print("ПОЛНАЯ ОБРАБОТКА ДОКУМЕНТОВ")
     print("=" * 60)
     process_all_documents()
-    print("\n✅ ГОТОВО!")
+    print("ГОТОВО!")
