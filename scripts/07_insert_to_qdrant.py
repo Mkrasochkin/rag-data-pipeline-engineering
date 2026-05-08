@@ -3,7 +3,7 @@ import importlib
 from qdrant_client import QdrantClient, models
 from scripts.qdrant_helper import QdrantHelper
 
-Embedder = importlib.import_module("scripts.08_embedding").Embedder
+Embedder = importlib.import_module("scripts.05_embedding").Embedder
 
 
 def embed_vector_rows_to_qdrant_points(

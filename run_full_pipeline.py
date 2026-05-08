@@ -11,18 +11,18 @@ from scripts.supbase_helper import SupabaseHelper
 
 
 # Скрипты, которые запускаются через ООП или импортом
-SPDocumentChunker = importlib.import_module("scripts.07_chunking").SPDocumentChunker
-Embedder = importlib.import_module("scripts.08_embedding").Embedder
-QdrantInsertor = importlib.import_module("scripts.11_insert_to_qdrant").QdrantInsertor
-SupabaseChunksUpserter = importlib.import_module("scripts.09_upsert_chunks_supb").SupabaseChunksUpserter
+SPDocumentChunker = importlib.import_module("scripts.04_chunking").SPDocumentChunker
+Embedder = importlib.import_module("scripts.05_embedding").Embedder
+SupabaseChunksUpserter = importlib.import_module("scripts.06_upsert_chunks_supb").SupabaseChunksUpserter
+QdrantInsertor = importlib.import_module("scripts.07_insert_to_qdrant").QdrantInsertor
 
 # Скрипты, которые запускаются в своем main()
-pdf_to_markdown_path_02 = "scripts/02_pdf_to_markdown.py"
-clean_markdown_path_03 = "scripts/03_clean_markdown.py"
-supabase_writer_path_10 = "scripts/10_supabase_writer.py"
+pdf_to_markdown_path_02 = "scripts/01_pdf_to_markdown.py"
+clean_markdown_path_03 = "scripts/02_clean_markdown.py"
+supabase_writer_path_10 = "scripts/03_supabase_writer.py"
 
-# Функция, которая вставляет векторы в Qdrant из скрипта 11_insert_to_qdrant.py
-embed_vector_rows_to_qdrant_points = importlib.import_module("scripts.11_insert_to_qdrant").embed_vector_rows_to_qdrant_points
+# Функция, которая вставляет векторы в Qdrant из скрипта 07_insert_to_qdrant.py
+embed_vector_rows_to_qdrant_points = importlib.import_module("scripts.07_insert_to_qdrant").embed_vector_rows_to_qdrant_points
 
 
 PROJECT_ROOT = Path(__file__).parent
@@ -42,16 +42,16 @@ QDRANT_COLLECTION_NAME = "sp_chunks"
 
 def main():
     print("-" * 100)
-    print("Работает скрипт 02_pdf_to_markdown.py")
+    print("Работает скрипт 01_pdf_to_markdown.py")
     subprocess.run([sys.executable, pdf_to_markdown_path_02], check=True)
 
     print("-" * 100)
-    print("Работает скрипт 03_clean_markdown.py")
+    print("Работает скрипт 02_clean_markdown.py")
     subprocess.run([sys.executable, clean_markdown_path_03], check=True)
     print("-" * 100)
 
     print("-" * 100)
-    print("Работает скрипт 10_supabase_writer.py")
+    print("Работает скрипт 03_supabase_writer.py")
     subprocess.run([sys.executable, supabase_writer_path_10], check=True)
     print("-" * 100)
 
