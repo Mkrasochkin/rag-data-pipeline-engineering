@@ -94,8 +94,6 @@ class SupabaseChunksUpserter:
             .execute()
         )
 
-        print("Все ок")
-
     def insert_chunks(
         self,
         *,

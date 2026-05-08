@@ -55,6 +55,7 @@ class SupabaseMetadataWriter:
             .eq("visibility", "public") \
             .execute()
 
+
         # Генерируем document_family_id (если не передан)
         family_id = doc_data.get("document_family_id", str(uuid.uuid4()))
 

@@ -1,4 +1,4 @@
-from qdrant_client import QdrantClient
+from qdrant_client import QdrantClient, models
 
 
 class QdrantHelper:
@@ -31,3 +31,53 @@ class QdrantHelper:
         except Exception as e:
             print(f"Ошибка при проверке соединения с Qdrant: {e}")
             return False
+
+    def create_collection(
+        self,
+        *,
+        collection_name: str,
+        vector_size: int = 1024,
+        distance: models.Distance = models.Distance.COSINE,
+    ) -> None:
+        """
+        Создает коллекцию в Qdrant.
+        Если коллекция уже существует, то ничего не делает.
+        """
+        if self.check_collection(collection_name=collection_name):
+            print(f"Коллекция {collection_name} уже существует")
+            return
+
+        self.client.create_collection(
+            collection_name=collection_name,
+            vectors_config=models.VectorParams(
+                size=vector_size,
+                distance=distance,
+            ),
+        )
+        print(f"Коллекция {collection_name} создана")
+
+    def delete_collection(
+        self,
+        *,
+        collection_name: str,
+    ) -> None:
+        """
+        Удаляет коллекцию в Qdrant. Если коллекция не существует, то ничего не делает.
+        """
+        if not self.check_collection(collection_name=collection_name):
+            print(f"Коллекция {collection_name} не существует")
+            return
+
+        self.client.delete_collection(collection_name=collection_name)
+        print(f"Коллекция {collection_name} удалена")
+
+    def check_collection(
+        self,
+        *,
+        collection_name: str,
+    ) -> bool:
+        """
+        Проверяет наличие коллекции в Qdrant.
+        True - коллекция существует, False - коллекция не существует.
+        """
+        return self.client.collection_exists(collection_name=collection_name)
