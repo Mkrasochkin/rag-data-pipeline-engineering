@@ -12,10 +12,10 @@ Team_DE/
 ├── scripts/                            # DE скрипты
 │   ├── 01_pdf_to_markdown.py           # Конвертация PDF → Markdown
 │   ├── 02_clean_markdown.py            # Очистка документа от мусора, извлечение метаданных для Supabase documents и document_sections в json, разбивка на секции по пунктам, создание JSON-файлов для всех документов
-│   ├── 03_chunking.py                  # Чанкование секций, извлечение метаданных для Supabase chunks
-│   ├── 04_embedding.py                 # Эмбеддинг чанков
-│   ├── 05_upload_to_qdrant.py          # Загрузка метаданных в Supabase и векторов в Qdrant
-│   ├── 06_supabase_writer.py           # Вставка метаданных из json в documents и document_sections
+│   ├── 03_supabase_writer.py           # Вставка метаданных из json в documents и document_sections
+│   ├── 04_chunking.py                  # Чанкование секций, извлечение метаданных для Supabase chunks
+│   ├── 05_embedding.py                 # Эмбеддинг чанков
+│   ├── 05_upsert_chunks_supb.py        # Загрузка метаданных в Supabase и векторов в Qdrant
 │   ├── 07_insert_to_qdrant.py          # Вставка векторов в Qdrant
 │   ├── qdrant_helper                   # Подключение к векторной БД
 │   └── supbase_helper                  # Подключение к Supabase
