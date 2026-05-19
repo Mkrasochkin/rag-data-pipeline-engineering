@@ -145,7 +145,6 @@ class SupabaseChunksUpserter:
                 or metadata.get("section_id")
                 or section_ids_by_code.get(metadata.get("section_code"))
             )
-            supabase_logger.info(f"section_id: {section_id}")
 
             records.append(
                 {
