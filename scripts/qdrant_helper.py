@@ -1,4 +1,8 @@
 from qdrant_client import QdrantClient, models
+import logging as lg
+
+qdrant_logger = lg.getLogger(__name__)
+qdrant_logger.setLevel(lg.INFO)
 
 
 class QdrantHelper:
@@ -30,7 +34,7 @@ class QdrantHelper:
             self.get_qdrant_client().get_collections()
             return True
         except Exception as e:
-            print(f"Ошибка при проверке соединения с Qdrant: {e}")
+            qdrant_logger.error(f"Ошибка при проверке соединения с Qdrant: {e}")
             return False
 
     def create_collection(
@@ -45,7 +49,7 @@ class QdrantHelper:
         Если коллекция уже существует, то ничего не делает.
         """
         if self.check_collection(collection_name=collection_name):
-            print(f"Коллекция {collection_name} уже существует")
+            qdrant_logger.warning(f"Коллекция {collection_name} уже существует")
             return
 
         self.client.create_collection(
@@ -55,7 +59,7 @@ class QdrantHelper:
                 distance=distance,
             ),
         )
-        print(f"Коллекция {collection_name} создана")
+        qdrant_logger.info(f"Коллекция {collection_name} создана")
 
     def delete_collection(
         self,
@@ -66,11 +70,11 @@ class QdrantHelper:
         Удаляет коллекцию в Qdrant. Если коллекция не существует, то ничего не делает.
         """
         if not self.check_collection(collection_name=collection_name):
-            print(f"Коллекция {collection_name} не существует")
+            qdrant_logger.warning(f"Коллекция {collection_name} не существует")
             return
 
         self.client.delete_collection(collection_name=collection_name)
-        print(f"Коллекция {collection_name} удалена")
+        qdrant_logger.info(f"Коллекция {collection_name} удалена")
 
     def check_collection(
         self,

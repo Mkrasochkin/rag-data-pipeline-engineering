@@ -1,4 +1,9 @@
 from supabase import Client
+import logging as lg
+
+
+supabase_logger = lg.getLogger(__name__)
+supabase_logger.setLevel(lg.INFO)
 
 
 class SupabaseChunksUpserter:
@@ -37,11 +42,13 @@ class SupabaseChunksUpserter:
         )
         document = response.data
         if not document:
+            supabase_logger.error(f"Документ не найден: designation={designation}, year={year}, type={doc_type}")
             raise ValueError(
                 f"Документ не найден: designation={designation}, year={year}, "
                 f"type={doc_type}"
             )
         if not document.get("id"):
+            supabase_logger.error("В documents отсутствуют id")
             raise ValueError("В documents отсутствуют id")
         return document
 
@@ -134,10 +141,11 @@ class SupabaseChunksUpserter:
         for chunk in chunks:
             metadata = chunk["metadata"]
             section_id = (
-                metadata.get("section_id")
+                section_ids_by_code.get(metadata.get("clause_start"))
+                or metadata.get("section_id")
                 or section_ids_by_code.get(metadata.get("section_code"))
-                or section_ids_by_code.get(metadata.get("clause_start"))
             )
+            supabase_logger.info(f"section_id: {section_id}")
 
             records.append(
                 {
@@ -182,6 +190,7 @@ class SupabaseChunksUpserter:
             )
 
         if not vector_rows:
+            supabase_logger.error("Не удалось вставить чанки в таблицу chunks.")
             raise ValueError("Не удалось вставить чанки в таблицу chunks.")
 
         return vector_rows
@@ -200,7 +209,7 @@ class SupabaseChunksUpserter:
         vector_rows: list[dict] = []
         response = self.supabase_client.table("chunks").select("*").eq("doc_id", doc_id).execute()
         if not response.data:
-            print(f"Не найдено чанков для документа {doc_id}")
+            supabase_logger.info(f"Не найдено чанков для документа {doc_id}")
             return []
         rows = response.data or []
         vector_rows.extend(

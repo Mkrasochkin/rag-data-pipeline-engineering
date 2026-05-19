@@ -1,5 +1,6 @@
 import re
 import uuid
+import logging as lg
 import importlib
 import json
 
@@ -51,6 +52,10 @@ _TABLE_HARD_BOUNDARY = re.compile(
     re.IGNORECASE,
 )
 
+# Настройки логирования для скрипта
+chunk_logger = lg.getLogger(__name__)
+chunk_logger.setLevel(lg.INFO)
+
 
 class SPDocumentChunker:
     def __init__(
@@ -84,7 +89,9 @@ class SPDocumentChunker:
             separators=self.separators,
             length_function=self.embedder.count_tokens,
         )
-        return splitter.split_text(text)
+        chunks = splitter.split_text(text)
+        chunk_logger.debug(f"Разбили текст на чанки: {len(chunks)}")
+        return chunks
 
     def is_same_level_and_parent(self, first_number_text: str, second_number_text: str) -> bool:
         """
@@ -95,7 +102,11 @@ class SPDocumentChunker:
             first_number_text: первый номер пункта в виде текста
             second_number_text: второй номер пункта в виде текста
         """
-        if not first_number_text or not second_number_text:
+        if not first_number_text:
+            chunk_logger.info("Нет first_number_text в функции is_same_level_and_parent")
+            return False
+        elif not second_number_text:
+            chunk_logger.info("Нет second_number_text в функции is_same_level_and_parent")
             return False
 
         # Убираем точки и разделяем на части
@@ -118,6 +129,7 @@ class SPDocumentChunker:
             matches: список совпадений для склеивания
         """
         if not matches:
+            chunk_logger.info("Список совпадений пустой")
             return []
 
         result: list[re.Match[str]] = []
@@ -144,7 +156,6 @@ class SPDocumentChunker:
                 if sec_int <= last_sub_head:
                     in_list_after_sub = True
                     continue
-
             result.append(m)
 
         return result
@@ -162,7 +173,9 @@ class SPDocumentChunker:
         matches = self.filter_false_boundaries(matches)
         if not matches:
             if not text:
+                chunk_logger.info("Текст пустой")
                 return []
+            chunk_logger.debug("Текст не содержит пунктов, разбиваем на чанки стандартной функцией RecursiveCharacterTextSplitter")
             return self.split_text_into_chunks(text)
 
         blocks: list[str] = []
@@ -219,6 +232,7 @@ class SPDocumentChunker:
                     if table_part:
                         blocks.append(table_part)
 
+        chunk_logger.debug(f"Блоки после разбиения на чанки: {len(blocks)}")
         return self.merge_minimal_blocks(blocks)
         # return blocks
 
@@ -232,6 +246,7 @@ class SPDocumentChunker:
             blocks: список чанков для склеивания
         """
         if not blocks:
+            chunk_logger.info("Список блоков пустой")
             return []
 
         merged_blocks: list[str] = []
@@ -285,6 +300,7 @@ class SPDocumentChunker:
                 merged_blocks.append(current_block)
                 i += 1
 
+        chunk_logger.debug(f"Блоков после склеивания: {len(merged_blocks)}")
         return merged_blocks
 
     def get_section_path(self, section_number: str) -> str:
@@ -295,6 +311,7 @@ class SPDocumentChunker:
             section_number: номер раздела
         """
         if not section_number:
+            chunk_logger.debug("Номер раздела пустой")
             return ""
         result = []
         # Навсякий убираем точку справа и сплитим по точкам
@@ -302,6 +319,7 @@ class SPDocumentChunker:
 
         for i, _ in enumerate(section_number):
             result.append(".".join(section_number[:i+1]))
+        chunk_logger.debug(f"Результат функции get_section_path: {result}")
         return " > ".join(result)
 
     def clause_display(self, nums: list[str]) -> str | None:
@@ -312,11 +330,16 @@ class SPDocumentChunker:
         Args:
             nums: список номеров пунктов
         """
+        chunk_logger.debug(f"Вызов функции clause_display для списка номеров пунктов: {nums}")
         if not nums:
+            chunk_logger.debug("Список номеров пунктов пустой")
             return None
         if len(nums) == 1:
+            chunk_logger.debug(f"Результат функции clause_display для одного пункта: {f'п. {nums[0]}'}")
             return f"п. {nums[0]}"
-        return f"пп. {nums[0]}-{nums[-1]}"
+        result = f"пп. {nums[0]}-{nums[-1]}"
+        chunk_logger.debug(f"Результат функции clause_display для нескольких пунктов: {result}")
+        return result
 
     def get_data_from_json(self, json_path: Path) -> dict | None:
         """
@@ -325,15 +348,18 @@ class SPDocumentChunker:
         Args:
             json_path: путь к JSON-файлу
         """
+        chunk_logger.debug(f"Вызов функции get_data_from_json для пути к JSON-файлу: {json_path}")
         with open(json_path, "r", encoding="utf-8") as f:
             json_data = json.load(f)
 
         if json_data:
+            chunk_logger.debug(f"JSON-файл найден: {json_data}")
             return {
                 "designation": json_data["document"]["metadata"]["designation"],
                 "year": json_data["document"]["metadata"]["year"],
                 "type": json_data["document"]["metadata"]["type"],
             }
+        chunk_logger.debug("JSON-файл не найден")
         return None
 
     def add_metadata(
@@ -424,4 +450,5 @@ class SPDocumentChunker:
                         },
                     }
                 )
+        chunk_logger.debug(f"Результат функции add_metadata: {len(result)}")
         return result
