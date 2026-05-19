@@ -15,7 +15,7 @@ class SupabaseHelper:
         self.client = create_client(
             supabase_url,
             supabase_key,
-            options=ClientOptions(postgrest_client_timeout=10),
+            options=ClientOptions(postgrest_client_timeout=120),
         )
 
     def get_supabase_client(self) -> Client:

@@ -116,53 +116,150 @@ class SupabaseMetadataWriter:
 
     def upsert_sections(self, doc_id: str, sections: List[Dict]) -> int:
         """
-        Заменяет все секции документа на новые.
-
+        Вставляет секции документа с установлением правильных родительских связей.
+        
+        Алгоритм:
+        1. Удаляем старые секции документа (если есть)
+        2. Сортируем секции по уровню вложенности (родители перед детьми)
+        3. Вставляем каждую секцию по очереди
+        4. Запоминаем ID каждой вставленной секции в словаре section_code → id
+        5. Для каждой новой секции пытаемся найти ID её родителя в словаре
+        6. Если родитель найден — устанавливаем parent_section_id
+        
         Args:
-            doc_id: UUID документа
-            sections: список секций
-  
+            doc_id: UUID документа в Supabase
+            sections: список секций из JSON-файла
+            
         Returns:
-            int: количество вставленных секций
+            int: количество успешно вставленных секций
         """
-
-        # Удаляем старые секции
-        self.supabase.table("document_sections") \
+        
+        # ============================================================
+        # ШАГ 1: Удаляем старые секции этого документа
+        # ============================================================
+        print(f"Удаление старых секций для документа {doc_id}...")
+        
+        delete_result = self.supabase.table("document_sections") \
             .delete() \
             .eq("doc_id", doc_id) \
             .execute()
-
+        
+        print(f"Удалено старых секций: {len(delete_result.data) if delete_result.data else 0}")
+        
         if not sections:
+            print("Нет секций для вставки")
             return 0
-
-        # Подготавливаем секции для вставки
-        sections_data = []
-        section_map = {}  # code -> id для связи родитель-потомок
-
-        for section in sections:
+        
+        # ============================================================
+        # ШАГ 2: Сортируем секции для правильного порядка вставки
+        # ============================================================
+        
+        sorted_sections = sorted(
+            sections, 
+            key=lambda x: (x.get("level", 1), x.get("section_code", ""))
+        )
+        
+        print(f"Всего секций для вставки: {len(sorted_sections)}")
+        
+        # ============================================================
+        # ШАГ 3: Подготавливаем словарь для хранения связей
+        # ============================================================
+        section_map = {}
+        
+        # ============================================================
+        # ШАГ 4: Вставляем секции по одной
+        # ============================================================
+        inserted_count = 0
+        errors = []
+        
+        for idx, section in enumerate(sorted_sections, 1):
+            section_code = section.get("section_code")
+            section_title = section.get("section_title", "")
+            level = section.get("level", 1)
+            hierarchy_path = section.get("hierarchy_path")
+            
+            print(f"    [{idx}/{len(sorted_sections)}] Обработка: {section_code} - {section_title[:50]}...")
+            
+            # ========================================================
+            # ШАГ 4.1: Базовые данные секции
+            # ========================================================
             section_data = {
                 "doc_id": doc_id,
-                "section_code": section.get("section_code"),
-                "section_title": section["section_title"],
-                "level": section.get("level", 1),
-                "hierarchy_path": section.get("hierarchy_path"),
+                "section_code": section_code,
+                "section_title": section_title,
+                "level": level,
+                "hierarchy_path": hierarchy_path,
             }
-
-            # Определяем родительскую секцию
-            if section.get("level", 1) > 1 and section.get("section_code"):
-                # Для "1.1" родитель "1", для "8.1.1" родитель "8.1"
-                parts = section["section_code"].split(".")
-                parent_code = ".".join(parts[:-1])
-    
-                if parent_code in section_map:
-                    section_data["parent_section_id"] = section_map[parent_code]
-
-            sections_data.append(section_data)
-
-        # Вставляем секции и запоминаем их ID
-        result = self.supabase.table("document_sections").insert(sections_data).execute()
-
-        return len(result.data)
+            
+        
+            section_data = {k: v for k, v in section_data.items() if v is not None}
+            
+            # ========================================================
+            # ШАГ 4.2: Пытаемся найти родительскую секцию
+            # ========================================================
+            
+            if level > 1 and section_code:
+                # Разбиваем код на части
+                parts = section_code.split(".")
+                
+                # Если частей больше 1, значит у этого раздела есть родитель
+                if len(parts) > 1:
+                    # Формируем код родителя (отбрасываем последнюю часть)
+                    parent_code = ".".join(parts[:-1])
+                    
+                    # Ищем родителя в словаре уже вставленных секций
+                    if parent_code in section_map:
+                        section_data["parent_section_id"] = section_map[parent_code]
+                        print(f"Установлена связь: {section_code} → {parent_code} (ID: {section_map[parent_code]})")
+                    else:
+                        warning_msg = f"Родитель '{parent_code}' для '{section_code}' не найден в section_map"
+                        print(f"      {warning_msg}")
+                        errors.append(warning_msg)
+            
+            # ========================================================
+            # ШАГ 4.3: Вставляем секцию в базу данных
+            # ========================================================
+            try:
+                result = self.supabase.table("document_sections") \
+                    .insert(section_data) \
+                    .execute()
+                
+                # Получаем ID вставленной секции
+                if result.data and len(result.data) > 0:
+                    new_id = result.data[0]["id"]
+                    inserted_count += 1
+                    
+                    # ====================================================
+                    # ШАГ 4.4: Сохраняем ID в словарь для будущих потомков
+                    # ====================================================
+                    if section_code:
+                        section_map[section_code] = new_id
+                        print(f"Вставлена секция {section_code} с ID: {new_id}")
+                    else:
+                        print(f"Вставлена секция без кода с ID: {new_id}")
+                else:
+                    print(f"Ошибка: не получен ID после вставки")
+                    errors.append(f"Не удалось вставить секцию {section_code}")
+                    
+            except Exception as e:
+                print(f"Ошибка вставки: {str(e)}")
+                errors.append(f"Ошибка вставки {section_code}: {str(e)}")
+        
+        # ============================================================
+        # ШАГ 5: Выводим статистику и предупреждения
+        # ============================================================
+        print(f"\nРезультаты вставки секций:")
+        print(f"     - Успешно вставлено: {inserted_count} из {len(sorted_sections)}")
+        print(f"     - Ошибок/предупреждений: {len(errors)}")
+        
+        if errors:
+            print(f"\n Предупреждения и ошибки:")
+            for error in errors[:10]:  
+                print(f"     - {error}")
+            if len(errors) > 10:
+                print(f"     ... и ещё {len(errors) - 10} ошибок")
+        
+        return inserted_count
 
     def process_json_file(self, json_path: Path) -> Dict:
         """
