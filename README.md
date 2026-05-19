@@ -20,6 +20,10 @@ Team_DE/
 │   ├── qdrant_helper                   # Подключение к векторной БД
 │   └── supbase_helper                  # Подключение к Supabase
 │
+│
+├── tests/                              # Unit-тесты
+│   └── test_sp_parser.py
+│
 ├── data/                               # Входные данные
 │   └── pdfs/                           # Папка с PDF документами
 │       ├── SP 1.13130.2020.pdf
