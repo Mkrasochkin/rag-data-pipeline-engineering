@@ -1,122 +1,224 @@
 ```text
 Team_DE/
-├── .env                              # Секреты (пароли, ключи)
-├── .gitignore                        # Игнорируем .env и данные
-├── docker-compose.yml                # Запуск Qdrant
-├── requirements.txt                  # Python зависимости
+├── .env                                # Секреты (пароли, ключи)
+├── .gitignore                          # Игнорируем .env и данные
+├── requirements.txt                    # Python зависимости
+├── README.md                           # Инструкция
+├── run_full_pipeline.py                # Оркестратор полного пайплайна
 │
-├── sql/                              # SQL скрипты для Supabase
-│   └── 01_create_tables.sql          # DDL файл (full_DDL_with_comments.sql)
+├── sql/                                # SQL скрипты для Supabase
+│   └── 01_create_tables.sql            # DDL файл (создание схемы, таблиц, триггеры, функции, политики)
 │
-├── scripts/                          # DE скрипты
-│   ├── 01_init_qdrant.py             # Создание коллекции в Qdrant
-│   ├── 02_pdf_to_markdown.py         # Конвертация PDF → Markdown
-│   ├── 03_clean_markdown.py          # Очистка документа от мусора
-│   ├── 04_extract_metadata.py        # Извлечение метаданных для Supabase documents
-│   ├── 05_section_extractor.py       # Разбивка на секции по заголовкам #, ##, ###
-│   ├── 06_create_json_structure.py   # Создание JSON-файлов для всех документов
-│   ├── 07_chunking.py                # Чанкование секций
-│   ├── 08_embedding.py               # Эмбеддинг чанков
-│   ├── 09_upload_to_qdrant.py        # Загрузка векторов в Qdrant
-│   ├── 10_supabase_writer.py         # SupabaseMetadataWriter (вставка в documents и document_sections)
-│   ├── 11_check_status.py            # Проверка статуса
-│   └── full_pipeline.py              # Оркестратор полного пайплайна
+├── scripts/                            # DE скрипты
+│   ├── 01_pdf_to_markdown.py           # Конвертация PDF → Markdown
+│   ├── 02_clean_markdown.py            # Очистка документа от мусора, извлечение метаданных для Supabase
+│   ├── 03_supabase_writer.py           # Вставка метаданных из json в documents и document_sections
+│   ├── 04_chunking.py                  # Чанкование секций, извлечение метаданных для Supabase chunks
+│   ├── 05_embedding.py                 # Эмбеддинг чанков
+│   ├── 06_upsert_chunks_supb.py        # Загрузка метаданных в Supabase и векторов в Qdrant
+│   ├── 07_insert_to_qdrant.py          # Вставка векторов в Qdrant
+│   ├── qdrant_helper                   # Подключение к векторной БД
+│   └── supbase_helper                  # Подключение к Supabase
 │
-├── core/                             # Общие модули и утилиты
-│   ├── __init__.py
-│   ├── config.py                     # Конфигурация (загрузка из .env)
-│   ├── supabase_client.py            # Клиент для Supabase
-│   ├── qdrant_client.py              # Клиент для Qdrant
-│   └── utils.py                      # Вспомогательные функции
-│
-├── data/                             # Входные данные
-│   └── pdfs/                         # Папка с PDF документами
-│       ├── SP_113_2023.pdf
+├── data/                               # Входные данные
+│   └── pdfs/                           # Папка с PDF документами
+│       ├── SP 1.13130.2020.pdf
 │       └── ...
 │
-├── output/                           # Промежуточные выходные данные
-│   ├── markdown/                     # Конвертированные Markdown файлы
-│   │   └── СП_113.13330.2023_Стоянки_автомобилей.md
-│   ├── cleaned/                      # Очищенные Markdown файлы
-│   │   └── СП_113.13330.2023_Стоянки_автомобилей_clean.md
-│   └── json/                         # JSON структуры документов
-│       └── СП_113.13330.2023_Стоянки_автомобилей.json
+├── output/                             # Промежуточные выходные данные
+│   ├── markdown/                       # Конвертированные Markdown файлы
+│   │   └── SP 1.13130.2020.md
+│   ├── cleaned/                        # Очищенные Markdown файлы
+│   │   └── СП_1.13130.2020.md
+│   └── json/                           # JSON структуры метаданных
+│       └── СП_1.13130.2020.json
 │
-├── qdrant_data/                      # Данные Qdrant (авто)
-│
-└── README_DE.md                      # Инструкция
+└── qdrant_data/                        # Данные Qdrant (авто)
 ```
-Первый запуск
-# 1. Клонировать репозиторий
-git clone ...
+
+# Предварительные требования
+
+**ВМ:** Сервер с Linux (например, Ubuntu 20.04/22.04).
+
+**Доступ:** SSH-доступ к ВМ. Ваш пользователь должен быть в группе docker (обычно настраивается администратором).
+
+**Сервисы:** Аккаунт и проект в Supabase для облачной БД.
+
+---
+
+## Шаг 1: Подключение к ВМ и установка зависимостей ОС
+
+Подключитесь к вашей ВМ по SSH и выполните начальную настройку.
+
+```
+# 1. Подключение
+ssh ваш_пользователь@<IP_АДРЕС_ВМ>
+
+# 2. Обновление пакетов
+sudo apt update && sudo apt upgrade -y
+
+# 3. Установка Python, pip, git и сетевых утилит
+sudo apt install -y python3 python3-pip python3-venv git net-tools curl
+```
+
+---
+
+## Шаг 2: Клонирование репозитория и настройка переменных окружения
+
+```
+# 1. Клонируйте ваш проект (замените URL на реальный)
+git clone <URL_ВАШЕГО_РЕПОЗИТОРИЯ> svodpro
 cd svodpro
 
-# 2. Настроить .env
-cp .env.example .env
-nano .env  # Вставить пароль от Supabase
+# 2. Создайте виртуальное окружение Python и активируйте его
+python3 -m venv venv
+source venv/bin/activate
 
-# 3. Запустить Qdrant
-docker compose up -d
-
-# 4. Установить зависимости
+# 3. Установите Python-зависимости
 pip install -r requirements.txt
+```
 
-# 5. Применить схему БД в Supabase
-# Зайти в Supabase → SQL Editor → Выполнить sql/01_create_tables.sql
+Теперь создайте и заполните файл `.env` в корне проекта (`svodpro/.env`). Это самый важный шаг конфигурации.
 
-# 6. Создать коллекцию в Qdrant
-python scripts/01_init_qdrant.py
+```
+nano .env
+```
 
-# 7. Положить PDF в папку data/pdfs/
+Скопируйте и заполните содержимое. Возьмите `SUPABASE_URL` и `SUPABASE_PRIVATE_KEY_LONG` из настроек вашего проекта в Supabase (Settings -> API -> Project URL и service_role key).
 
-# 8. Парсинг и чанкование → Supabase
-python scripts/02_parse_and_chunk.py
+```
+# .env
+SUPABASE_URL=https://ваш-проект.supabase.co
+SUPABASE_PRIVATE_KEY_LONG=eyJhbGciOiJI...ваш-длинный-ключ
 
-# 9. Векторизация и загрузка в Qdrant
-python scripts/03_embed_and_upload.py
-
-# 10. Проверить статус
-python scripts/04_check_status.py
-
-
-
-
-Добавление новых документов
-bash
-# 1. Положить новые PDF в data/pdfs/
-# 2. Запустить парсинг
-python scripts/02_parse_and_chunk.py
-# 3. Запустить векторизацию
-python scripts/03_embed_and_upload.py
-
-
-
-
-После выполнения всех шагов, передать DS:
-
-bash
-# Подключение к Qdrant
 QDRANT_HOST=localhost
 QDRANT_PORT=6333
-QDRANT_COLLECTION=svod_chunks
+QDRANT_API_KEY=
+```
 
-# Подключение к Supabase (для получения метаданных)
-SUPABASE_DB_HOST=db.xxxx.supabase.co
-SUPABASE_DB_PASSWORD=...
 
-# Пример поиска (Python)
-from qdrant_client import QdrantClient
 
-client = QdrantClient(host="localhost", port=6333)
+---
 
-# Поиск с фильтром по workspace_id (RLS)
-results = client.search(
-    collection_name="svod_chunks",
-    query_vector=user_query_vector,  # получен из RoSBERTa
-    query_filter={
-        "must": [
-            {"key": "workspace_id", "match": {"value": workspace_id}}
-        ]
-    },
-    limit=5
-)
+## Шаг 3: Настройка облачной базы данных (Supabase)
+
+Выполните этот шаг один раз для инициализации схемы базы данных.
+
+1. Войдите в Supabase Dashboard вашего проекта.
+2. Перейдите в **SQL Editor**.
+3. Откройте файл `sql/01_create_tables.sql` из вашего проекта локально и скопируйте его полное содержимое.
+4. Вставьте скрипт в редактор Supabase и нажмите **Run**.
+5. Дождитесь успешного выполнения. Вы увидите сообщение *"Success. No rows returned"*. Все таблицы, индексы и политики будут созданы.
+
+---
+
+## Шаг 4: Установка Docker и запуск Qdrant
+
+Следуйте подпроцессу для установки Docker, если он еще не настроен на ВМ.
+
+### 4.1. Установка Docker Engine
+
+```
+# Установите необходимые пакеты для добавления репозитория Docker
+sudo apt-get install ca-certificates curl
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+
+# Добавьте репозиторий в источники Apt
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt-get update
+
+# Установите Docker Engine, CLI, containerd и плагин Docker Compose
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+# Добавьте вашего пользователя в группу docker, чтобы не использовать sudo
+sudo usermod -aG docker $USER
+```
+
+> **Важно:** После добавления в группу `docker` нужно перезайти в сессию (выйти и зайти по SSH) или выполнить `newgrp docker`.
+
+### 4.2. Запуск Qdrant
+
+В проекте уже есть готовый `docker-compose.yml` файл. Запустите им контейнер.
+
+```
+# Находясь в корневой папке проекта, запустите Qdrant в фоне
+docker compose up -d
+```
+
+**Проверка работы:**
+
+```
+# Проверка, что контейнер работает
+docker ps
+
+# Проверка HTTP API Qdrant
+curl http://localhost:6333
+```
+
+В ответ вы должны получить JSON с версией Qdrant.
+
+---
+
+## Шаг 5: Подготовка данных и полный запуск пайплайна
+
+Перед запуском убедитесь, что выполнены все предыдущие шаги: активировано виртуальное окружение, Qdrant запущен, Supabase настроен.
+
+### 5.1. Размещение PDF-файлов
+
+Поместите ваши PDF-файлы нормативных документов в папку `data/pdfs/`.
+
+```
+# Пример копирования файлов в нужную папку
+cp /путь/к/вашим/*.pdf data/pdfs/
+```
+
+### 5.2. Запуск главного оркестратора
+
+Теперь запустите `run_full_pipeline.py`. Он последовательно выполнит все шаги, от конвертации PDF до загрузки данных в Supabase и Qdrant.
+
+```
+python run_full_pipeline.py
+```
+
+**Что будет происходить по шагам (как задумано в скрипте):**
+
+1. Переводит документы из PDF в Markdown. Логика описана в скрипте 01_pdf_to_markdown.py
+2. Очищает Markdown от мусора. Логика описана в скрипте 02_clean_markdown.py
+3. Добавляет документы в таблицу documents в Supabase и пункты секций в таблицу document_sections в Supabase. А также добавляет JSON в папку output/json/. Логика описана в скрипте 03_supabase_writer.py
+4. Разбивает документы на чанки с помощью класса SPDocumentChunker.
+5. Вставляет чанки в таблицу chunks в Supabase с помощью класса SupabaseChunksUpserter.
+6. Вставляет векторные представления чанков в коллекцию sp_chunks в Qdrant с помощью класса QdrantInsertor.
+
+### 5.3. Валидация (как проверить, что все работает)
+
+**Supabase:** Зайдите в Supabase Dashboard -> Table Editor.
+
+- Проверьте таблицы `documents`, `document_sections` и `chunks`. В них должны появиться записи.
+
+**Qdrant:** Выполните API-запрос к коллекции.
+
+```
+curl http://localhost:6333/collections/sp_chunks
+```
+
+Если коллекция существует и количество векторов (`vectors_count`) больше 0, значит, загрузка прошла успешно.
+
+---
+
+## Заключение и полезные команды
+
+Проект развернут и успешно отработал.
+
+**Управление Qdrant:**
+
+- Остановить: `docker compose stop`
+- Запустить: `docker compose start`
+- Посмотреть логи: `docker compose logs -f`
+
+**Повторный запуск пайплайна:** Просто снова активируйте виртуальное окружение (`source venv/bin/activate`) и запускайте `python run_full_pipeline.py`. Скрипты upsert (обновляют или вставляют) безопасно обновят данные в Supabase и Qdrant для тех же документов.
+```

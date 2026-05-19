@@ -1,4 +1,8 @@
 from supabase import Client, ClientOptions, create_client
+import logging as lg
+
+supabase_logger = lg.getLogger(__name__)
+supabase_logger.setLevel(lg.INFO)
 
 
 class SupabaseHelper:
@@ -11,7 +15,7 @@ class SupabaseHelper:
         self.client = create_client(
             supabase_url,
             supabase_key,
-            options=ClientOptions(postgrest_client_timeout=10),
+            options=ClientOptions(postgrest_client_timeout=120),
         )
 
     def get_supabase_client(self) -> Client:
@@ -28,5 +32,5 @@ class SupabaseHelper:
             self.get_supabase_client().table("documents").select("*").execute()
             return True
         except Exception as e:
-            print(f"Ошибка при проверке соединения с Supabase: {e}")
+            supabase_logger.error(f"Ошибка при проверке соединения с Supabase: {e}")
             return False

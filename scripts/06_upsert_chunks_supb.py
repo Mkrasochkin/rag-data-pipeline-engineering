@@ -1,4 +1,9 @@
 from supabase import Client
+import logging as lg
+
+
+supabase_logger = lg.getLogger(__name__)
+supabase_logger.setLevel(lg.INFO)
 
 
 class SupabaseChunksUpserter:
@@ -9,7 +14,7 @@ class SupabaseChunksUpserter:
     ):
         self.supabase_client = supabase_client
 
-    def _get_document(
+    def get_document(
         self,
         *,
         designation: str,
@@ -37,15 +42,17 @@ class SupabaseChunksUpserter:
         )
         document = response.data
         if not document:
+            supabase_logger.error(f"Документ не найден: designation={designation}, year={year}, type={doc_type}")
             raise ValueError(
                 f"Документ не найден: designation={designation}, year={year}, "
                 f"type={doc_type}"
             )
         if not document.get("id"):
+            supabase_logger.error("В documents отсутствуют id")
             raise ValueError("В documents отсутствуют id")
         return document
 
-    def _get_section_maps(
+    def get_section_maps(
         self,
         *,
         doc_id: str,
@@ -76,6 +83,24 @@ class SupabaseChunksUpserter:
 
         return by_section_code
 
+    def delete_chunks_by_document(
+        self,
+        *,
+        doc_id: str,
+    ) -> None:
+        """
+        Удаляет все чанки, связанные с документом.
+
+        Args:
+            doc_id: id документа
+        """
+        (
+            self.supabase_client.table("chunks")
+            .delete()
+            .eq("doc_id", doc_id)
+            .execute()
+        )
+
     def insert_chunks(
         self,
         *,
@@ -99,7 +124,7 @@ class SupabaseChunksUpserter:
         year = chunks[0]["metadata"]["year"]
 
         # Ищем документ в Supabase
-        document = self._get_document(
+        document = self.get_document(
             designation=designation,
             year=year,
             doc_type=doc_type,
@@ -107,15 +132,18 @@ class SupabaseChunksUpserter:
 
         doc_id = document["id"]
         workspace_id = document.get("workspace_id")
-        section_ids_by_code = self._get_section_maps(doc_id=doc_id)
+        section_ids_by_code = self.get_section_maps(doc_id=doc_id)
+
+        # Перед вставкой очищаем старые чанки документа.
+        self.delete_chunks_by_document(doc_id=doc_id)
 
         records: list[dict] = []
         for chunk in chunks:
             metadata = chunk["metadata"]
             section_id = (
-                metadata.get("section_id")
+                section_ids_by_code.get(metadata.get("clause_start"))
+                or metadata.get("section_id")
                 or section_ids_by_code.get(metadata.get("section_code"))
-                or section_ids_by_code.get(metadata.get("clause_start"))
             )
 
             records.append(
@@ -161,6 +189,7 @@ class SupabaseChunksUpserter:
             )
 
         if not vector_rows:
+            supabase_logger.error("Не удалось вставить чанки в таблицу chunks.")
             raise ValueError("Не удалось вставить чанки в таблицу chunks.")
 
         return vector_rows
@@ -179,7 +208,7 @@ class SupabaseChunksUpserter:
         vector_rows: list[dict] = []
         response = self.supabase_client.table("chunks").select("*").eq("doc_id", doc_id).execute()
         if not response.data:
-            print(f"Не найдено чанков для документа {doc_id}")
+            supabase_logger.info(f"Не найдено чанков для документа {doc_id}")
             return []
         rows = response.data or []
         vector_rows.extend(
